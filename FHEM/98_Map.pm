@@ -30,7 +30,7 @@
 
 package main;
 
-my $VERSION = "0.0.1";
+my $VERSION = "0.0.2";
 
 use strict;
 use warnings;
@@ -49,11 +49,23 @@ sub Map_Rename(@);
 sub Map_Attr(@);
 sub Map_Notify($$);
 sub Map_Set($@);
-sub Map_Write($$);
 
 sub Map_UpdateInternals($);
+sub Map_UpdateLocation($);
+sub Map_CreateURL($);
+sub Map_FwFn($$$$);
+sub Map_showMap($);
+sub Map_doShowMap($;$);
+sub Map_zoomLink($$$);
 
 my $DebugMarker         = "Dbg";
+
+my $DefaultIcon         = "4";
+my $DefaultZoom         = "15";
+my $DefaultInterval_s   = "30";
+my $DefaultFrameWidth   = 800;
+my $DefaultFrameHeight  = 600;
+my $DefaultMapProvider  = "osmtools";
 
 #####################################
 # Map_Initialize( $hash )
@@ -68,11 +80,26 @@ sub Map_Initialize($)
   $hash->{AttrFn}   = \&Map_Attr;
   $hash->{NotifyFn} = \&Map_Notify;
   $hash->{SetFn}    = \&Map_Set;
-  $hash->{WriteFn}  = \&Map_Write;
+  
+  $hash->{FW_summaryFn} = \&Map_FwFn;
+  $hash->{FW_detailFn}  = \&Map_FwFn;
+  $hash->{FW_atPageEnd} = 1;
+  
+  $data{FWEXT}{"/Map_showMap"}{FUNC} = "Map_showMap";
+  $data{FWEXT}{"/Map_showMap"}{FORKABLE} = 1;
 
   $hash->{AttrList} = 
     "debug:0,1 " . 
     "disable:0,1 " . 
+    "mapProvider:osmtools " . 
+    "sourceDeviceName " . 
+    "sourceReadingNameLatitude " . 
+    "sourceReadingNameLongitude " . 
+    "refreshInterval " . 
+    "frameWidth " . 
+    "frameHeight " . 
+    "pinIcon:0,1,4,5,6,7,8,9,10,11 " . 
+    "zoom:0,1,2,3,4,5,6,7,8,9,10,11,14,15,16,17,18,19 " . 
     $readingFnAttributes;
 
   foreach my $d ( sort keys %{ $modules{Map}{defptr} } )
@@ -105,10 +132,22 @@ sub Map_Define($$)
   $hash->{VERSION}                        = $VERSION;
   $hash->{NOTIFYDEV}                      = "global,$name";
 
-  $hash->{helper}{DEBUG}                  = "0";
-  $hash->{helper}{IsDisabled}             = "0";
-  $hash->{helper}{GenericReadings}        = "none";
-  
+  $hash->{helper}{DEBUG}                      = "0";
+  $hash->{helper}{IsDisabled}                 = "0";
+  $hash->{helper}{SourceDeviceName}           = "";
+  $hash->{helper}{SourceReadingNameLatitude}  = "";
+  $hash->{helper}{SourceReadingNameLongitude} = "";
+
+  $hash->{helper}{MapProvider}                = "OpenStreeMap";
+  $hash->{helper}{Longitude}                  = "8";
+  $hash->{helper}{Latitude}                   = "49";
+  $hash->{helper}{Icon}                       = $DefaultIcon;
+  $hash->{helper}{Zoom}                       = $DefaultZoom;
+  $hash->{helper}{FrameWidth}                 = $DefaultFrameWidth;
+  $hash->{helper}{FrameHeight}                = $DefaultFrameHeight;
+  $hash->{helper}{RefreshInterval}            = $DefaultInterval_s;
+  $hash->{helper}{Url}                        = "";
+
   # set default Attributes
   if (AttrVal($name, "room", "none" ) eq "none")
   {
@@ -118,8 +157,6 @@ sub Map_Define($$)
   readingsSingleUpdate( $hash, "state", "initialized", 1 );
 
   Log3($name, 3, "Map_Define($name) - defined Map");
-
-  #$modules{Map}{defptr}{ACCOUNT} = $hash;
 
   return undef;
 }
@@ -162,13 +199,11 @@ sub Map_Attr(@)
   Log3($name, 4, "Map_Attr($name) - AttrName \"$attrName\" : \"$attrVal\"");
 
   # Attribute "disable"
-  if ( $attrName eq "disable" )
+  if (lc $attrName eq lc "disable" )
   {
     if ( $cmd eq "set" and 
       $attrVal eq "1" )
     {
-      Log3($name, 3, "Map_Attr($name) - disabled");
-
       $hash->{helper}{IsDisabled} = "1";
       
       readingsBeginUpdate($hash);
@@ -177,33 +212,178 @@ sub Map_Attr(@)
     } 
     else
     {
-      Log3($name, 3, "Map_Attr($name) - enabled");
-
       $hash->{helper}{IsDisabled} = "0";
 
       readingsBeginUpdate($hash);
       readingsBulkUpdateIfChanged( $hash, "state", "active", 1 );
       readingsEndUpdate( $hash, 1 );
     }
+    Log3($name, 3, "Map_Attr($name) - disabled $hash->{helper}{IsDisabled}");
+
+    Map_UpdateInternals($hash);
   }
 
   # Attribute "debug"
-  elsif ( $attrName eq "debug" )
+  elsif (lc $attrName eq lc "debug" )
   {
     if ( $cmd eq "set")
     {
-      Log3($name, 3, "Map_Attr($name) - debugging enabled");
-
       $hash->{helper}{DEBUG} = "$attrVal";
-      Map_UpdateInternals($hash);
     } 
     elsif ( $cmd eq "del" )
     {
-      Log3($name, 3, "Map_Attr($name) - debugging disabled");
-
       $hash->{helper}{DEBUG} = "0";
-      Map_UpdateInternals($hash);
     }
+    Log3($name, 3, "Map_Attr($name) - debug $hash->{helper}{DEBUG}");
+
+    Map_UpdateInternals($hash);
+  }
+  
+  # Attribute "pinIcon"
+  elsif (lc $attrName eq lc "pinIcon" )
+  {
+    if ( $cmd eq "set")
+    {
+      $hash->{helper}{Icon} = "$attrVal";
+    } 
+    elsif ( $cmd eq "del" )
+    {
+      $hash->{helper}{Icon} = $DefaultIcon;
+    }
+    Log3($name, 3, "Map_Attr($name) - pinIcon $hash->{helper}{Icon}");
+
+    Map_UpdateInternals($hash);
+  }
+  
+  # Attribute "frameWidth"
+  elsif (lc $attrName eq lc "frameWidth" )
+  {
+    if ( $cmd eq "set")
+    {
+      $hash->{helper}{FrameWidth} = "$attrVal";
+    } 
+    elsif ( $cmd eq "del" )
+    {
+      $hash->{helper}{FrameWidth} = $DefaultFrameWidth;
+    }
+    Log3($name, 3, "Map_Attr($name) - frameWidth $hash->{helper}{FrameWidth}");
+
+    Map_UpdateInternals($hash);
+  }
+  
+  # Attribute "frameHeight"
+  elsif (lc $attrName eq lc "frameHeight" )
+  {
+    if ( $cmd eq "set")
+    {
+      $hash->{helper}{FrameHeight} = "$attrVal";
+    } 
+    elsif ( $cmd eq "del" )
+    {
+      $hash->{helper}{FrameHeight} = $DefaultFrameHeight;
+    }
+    Log3($name, 3, "Map_Attr($name) - frameHeight $hash->{helper}{FrameHeight}");
+
+    Map_UpdateInternals($hash);
+  }
+  
+  # Attribute "zoom"
+  elsif (lc $attrName eq lc "zoom" )
+  {
+    if ( $cmd eq "set")
+    {
+      $hash->{helper}{Zoom} = "$attrVal";
+    } 
+    elsif ( $cmd eq "del" )
+    {
+      $hash->{helper}{Zoom} = $DefaultZoom;
+    }
+    Log3($name, 3, "Map_Attr($name) - zoom $hash->{helper}{Zoom}");
+
+    Map_UpdateInternals($hash);
+  }
+  
+  # Attribute "mapProvider"
+  elsif (lc $attrName eq lc "mapProvider" )
+  {
+    if ( $cmd eq "set")
+    {
+      $hash->{helper}{MapProvider} = "$attrVal";
+    } 
+    elsif ( $cmd eq "del" )
+    {
+      $hash->{helper}{MapProvider} = $DefaultMapProvider;
+    }
+    Log3($name, 3, "Map_Attr($name) - mapProvider $hash->{helper}{MapProvider}");
+
+    Map_UpdateInternals($hash);
+  }
+  
+  # Attribute "refreshInterval"
+  elsif (lc $attrName eq lc "refreshInterval" )
+  {
+    if ( $cmd eq "set")
+    {
+      return "Interval must be greater than 0"
+        unless($attrVal > 0);
+
+      $hash->{helper}{RefreshInterval} = "$attrVal";
+    } 
+    elsif ( $cmd eq "del" )
+    {
+      $hash->{helper}{RefreshInterval} = $DefaultInterval_s;
+    }
+    Log3($name, 3, "Map_Attr($name) - refreshInterval $hash->{helper}{RefreshInterval}");
+
+    Map_UpdateInternals($hash);
+  }
+  
+  # Attribute "sourceDeviceName"
+  elsif(lc $attrName eq lc "sourceDeviceName")
+  {
+    if($cmd eq "set")
+    {
+      $hash->{helper}{SourceDeviceName} = "$attrVal";
+    } 
+    else
+    {
+      $hash->{helper}{SourceDeviceName} = "";
+    }
+    Log3($name, 3, "Map_Attr($name) - set sourceDeviceName: $hash->{helper}{SourceDeviceName}");
+
+    Map_UpdateInternals($hash);
+  }
+
+  # Attribute "sourceReadingNameLatitude"
+  elsif(lc $attrName eq lc "sourceReadingNameLatitude")
+  {
+    if($cmd eq "set")
+    {
+      $hash->{helper}{SourceReadingNameLatitude} = "$attrVal";
+    } 
+    else
+    {
+      $hash->{helper}{SourceReadingNameLatitude} = "";
+    }
+    Log3($name, 3, "Map_Attr($name) - set sourceReadingNameLatitude: $hash->{helper}{SourceReadingNameLatitude}");
+
+    Map_UpdateInternals($hash);
+  }
+
+  # Attribute "sourceReadingNameLongitude"
+  elsif(lc $attrName eq lc "sourceReadingNameLongitude")
+  {
+    if($cmd eq "set")
+    {
+      $hash->{helper}{SourceReadingNameLongitude} = "$attrVal";
+    } 
+    else
+    {
+      $hash->{helper}{SourceReadingNameLongitude} = "";
+    }
+    Log3($name, 3, "Map_Attr($name) - set sourceReadingNameLongitude: $hash->{helper}{SourceReadingNameLongitude}");
+
+    Map_UpdateInternals($hash);
   }
 
   return undef;
@@ -283,7 +463,7 @@ sub Map_Set($@)
     fhem("deletereading $name $mask", 1);
     return;
   }
-  ### Command "debugGetDevicesState"
+  ### create Command list
   else
   {
     my $list = "";
@@ -292,18 +472,6 @@ sub Map_Set($@)
 
     return "Unknown argument $cmd, choose one of $list";
   }
-  return undef;
-}
-
-#####################################
-# Map_Write( $hash, $param )
-sub Map_Write($$)
-{
-  my ( $hash, $param ) = @_;
-  my $name = $hash->{NAME};
-  my $resultCallback = $param->{resultCallback};
-
-  Log3($name, 4, "Map_Write($name)");
 }
 
 #####################################
@@ -313,11 +481,25 @@ sub Map_UpdateInternals($)
   my ($hash)  = @_;
   my $name    = $hash->{NAME};
 
-  Log3($name, 5, "Map_UpdateInternals($name)");
+  Log3($name, 3, "Map_UpdateInternals($name)");
   
   if($hash->{helper}{DEBUG} eq "1")
   {
-    $hash->{DEBUG_IsDisabled}               = $hash->{helper}{IsDisabled};
+    $hash->{DEBUG_IsDisabled}                       = $hash->{helper}{IsDisabled};
+
+    $hash->{DEBUG_SourceDeviceName}                 = $hash->{helper}{SourceDeviceName};
+    $hash->{DEBUG_SourceSourceReadingNameLatitude}  = $hash->{helper}{SourceReadingNameLatitude};
+    $hash->{DEBUG_SourceReadingNameLongitude}       = $hash->{helper}{SourceReadingNameLongitude};
+
+    $hash->{DEBUG_MapProvider}                      = $hash->{helper}{MapProvider};
+    $hash->{DEBUG_Latitude}                         = $hash->{helper}{Latitude};
+    $hash->{DEBUG_Longitude}                        = $hash->{helper}{Longitude};
+    $hash->{DEBUG_Icon}                             = $hash->{helper}{Icon};
+    $hash->{DEBUG_Zoom}                             = $hash->{helper}{Zoom};
+    $hash->{DEBUG_FrameWidth}                       = $hash->{helper}{FrameWidth};
+    $hash->{DEBUG_FrameHeight}                      = $hash->{helper}{FrameHeight};
+    $hash->{DEBUG_RefreshInterval}                  = $hash->{helper}{RefreshInterval};
+    $hash->{DEBUG_Url}                              = $hash->{helper}{Url};
   }
   else
   {
@@ -330,7 +512,327 @@ sub Map_UpdateInternals($)
   }
 }
 
+#####################################
+# Map_UpdateLocation( $hash )
+sub Map_UpdateLocation($)
+{
+  my ($hash)  = @_;
+  my $name    = $hash->{NAME};
 
+  Log3($name, 5, "Map_UpdateLocation($name)");
+  
+  # Change latitude and longitude to get a new location if no sourcedevice is defined for debugging
+  my $longitude = $hash->{helper}{Longitude} + 0.001;
+  my $latitude = $hash->{helper}{Latitude} + 0.001;
+  my $sourceDeviceName = $hash->{helper}{SourceDeviceName};
+  
+  if(defined($defs{$sourceDeviceName}))
+  {
+    $longitude = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLongitude}, $longitude);
+    $latitude = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLatitude}, $latitude);
+  }
+  
+  $hash->{helper}{Latitude} = $latitude;
+  $hash->{helper}{Longitude} = $longitude;
+  Map_UpdateInternals($hash);
+
+  readingsBeginUpdate($hash);
+  readingsBulkUpdate($hash, "Latitude", "$latitude");
+  readingsBulkUpdate($hash, "Longitude", "$longitude");
+  readingsEndUpdate($hash, 1);
+}
+
+#####################################
+# Map_CreateURL( $hash )
+sub Map_CreateURL($)
+{
+  my ($hash)  = @_;
+  my $name    = $hash->{NAME};
+
+  Log3($name, 5, "Map_CreateURL($name)");
+  
+  my $longitude = $hash->{helper}{Longitude};
+  my $latitude = $hash->{helper}{Latitude};
+
+   my $url = ""; 
+
+   if($hash->{DEBUG_MapProvider} eq "googlemapsXXX")
+   {
+#     $url = "https://maps.google.de/maps/search/?api=1" .
+#       "&query=$latitude,$longitude";
+     $url = "https://maps.google.de/maps/embed/v1/place/?api=1" .
+       "&map_action=map" .
+       "&zoom=$hash->{helper}{Zoom}" .
+       "&basemap=terrain" .
+       "&center=$latitude%2$longitude" .
+       "";
+   }
+   elsif($hash->{DEBUG_MapProvider} eq "openstreetmap")
+   {
+     $url = "http://www.openstreetmap.org/?" .
+       "mlat=$latitude" .
+       "&mlon=$longitude" .
+       "#map=$hash->{helper}{Zoom}/$latitude/$longitude" .
+       "";
+   }
+   else # default: ($hash->{DEBUG_MapProvider} eq "osmtools")
+   {
+     $url = "http://m.osmtools.de/?" .
+       "zoom=$hash->{helper}{Zoom}" . 
+       "&lon=$longitude" . 
+       "&mlon=$longitude" .
+       "&lat=$latitude" . 
+       "&mlat=$latitude" .
+       "&icon=$hash->{helper}{Icon}" .
+       "&iframe=1" .
+       "";
+   }
+
+  $hash->{helper}{Url} = $url;
+  Map_UpdateInternals($hash);
+
+  return $url;
+}
+
+##################
+# Map_FwFn($$$$)1
+sub Map_FwFn($$$$)
+{
+  my ($FW_wname, $name, $room, $pageHash) = @_; # pageHash is set for summaryFn.
+  my $hash = $defs{$name};
+  my $ret = "";
+
+  my $isFirst = (!$pageHash || !$pageHash->{mapLoaded});
+
+  $isFirst = 0 
+    if($pageHash && 
+      $pageHash->{mapIdx} && 
+      $pageHash->{mapIdx} != 1);
+
+  $pageHash->{mapLoaded} = 1
+    if($pageHash);
+
+#  $ret .= "<script type='text/javascript' src='$FW_ME/pgm2/svg.js'></script>"
+#    if($isFirst);
+
+  # plots navigation buttons
+  if($isFirst) 
+  {
+#    $ret .= '<div class="SVGlabel" data-name="svgZoomControl">';
+#    $ret .= Map_zoomLink("zoom=-1", "Zoom-in", "zoom in");
+#    $ret .= Map_zoomLink("zoom=1",  "Zoom-out","zoom out");
+#    $ret .= SVG_zoomLink("off=-1",  "Prev",    "prev");
+#    $ret .= SVG_zoomLink("off=1",   "Next",    "next");
+#    $ret .= '</div>';
+#    $pageHash->{buttons} = 1 
+#      if($pageHash);
+
+#    $ret .= "<br>";
+  }
+
+#  my $arg= "$FW_ME/Map_showMap?dev=$name".
+#              "&pos=" . join(";", map {"$_=$FW_pos{$_}"} keys %FW_pos);
+  my $arg= "$FW_ME/Map_showMap?dev=$name";
+
+  $ret .= "<div class=\"Map Map_$name\">";
+
+  my $height = $hash->{helper}{FrameHeight};
+  my $width = $hash->{helper}{FrameWidth};
+  my $frameIdentifier = "Embeded_Map_$name";
+
+  $ret .= "<iframe " .
+    "src='$arg' " .
+    "width='$width' " .
+    "height='$height' ".
+    "frameborder='0' " .
+    "scrolling='no' " .
+    "marginheight='0' " .
+    "marginwidth='0' " .
+    "name='$frameIdentifier' " .
+    "id='$frameIdentifier' " .
+    "></iframe>\n";
+
+  my $refreshInterval_ms = $hash->{helper}{RefreshInterval} * 1000;
+  my $script = "<script> " .
+    "window.setInterval('reloadIFrame();', $refreshInterval_ms); " .
+    "function reloadIFrame() { document.getElementById('$frameIdentifier').src='$arg'; } " .
+    "</script>";
+  $ret .= $script;
+
+  $ret .= "</div>";
+
+  if(!$pageHash) 
+  {
+#      $ret .= SVG_PEdit($FW_wname,$d,$room,$pageHash) . "<br>";
+      $ret .= "<br>";
+  }
+  else 
+  {
+    if(!AttrVal($name, "group", "") && 
+      !$FW_subdir) 
+    {
+      my $alias = AttrVal($name, "alias", $name);
+      my $clAdd = "\" data-name=\"$name";
+      $clAdd .= "\" style=\"display:none;"
+        if($FW_hiddenroom{detail});
+      $ret .= FW_pH("detail=$name", $alias, 0, "Maplabel Map_$name $clAdd", 1, 0);
+      $ret .= "<br>";
+    }
+  }
+
+  return $ret;
+}
+
+######################
+# Map_showMap($)
+sub Map_showMap($)
+{
+  return Map_doShowMap($FW_webArgs{dev});
+}
+
+######################
+# Map_doShowMap($)
+sub Map_doShowMap($;$)
+{
+  my ($name, $noHeader) = @_;
+  my $hash = $defs{$name};
+
+  Log3($name, 3, "Map_doShowLog($name)");
+
+  Map_UpdateLocation($hash);
+  my $url = Map_CreateURL($hash);
+
+  my $refreshInterval_ms = $hash->{helper}{RefreshInterval} * 1000;
+  my $frameIdentifier = "IFrame_Map_$name";
+  my $script = "";
+
+#  my $script = ""; #<script> " .
+#    "window.setInterval('reloadIFrame();', $refreshInterval_ms); " .
+#    "function reloadIFrame() { document.getElementById('IFrame_Map_$name').src='$url'; } " .
+#    "function reloadIFrame() { document.getElementById('IFrame_Map_$name').reload(); } " .
+#    "</script>";
+
+#  my $arg= "$FW_ME/Map_showMap?dev=$name".
+#              "&pos=" . join(";", map {"$_=$FW_pos{$_}"} keys %FW_pos);
+
+#  my $arg= "$FW_ME/Map_showMap?dev=$name";
+
+#  my $script_ = "<script> " .
+#    "window.setTimeout('reloadIFrame();', $refreshInterval_ms); " .
+#    "function reloadIFrame() { document.getElementById('IFrame_Map_$name').src='$arg'; } " .
+#    "</script>";
+
+  $FW_RETTYPE = "text/html";
+  FW_pO( 
+    "<iframe " .
+    "id='$frameIdentifier' " .
+    "name='$frameIdentifier' " .
+    "width='100%' " .
+    "height='100%' " .
+    "frameborder='0' " .
+    "scrolling='no' " .
+    "marginheight='0' " .
+    "marginwidth='0' " .
+    "icon='$hash->{helper}{Icon}' " .
+    "src='$url' " .
+    "></iframe> " .
+    $script);
+
+  return ($FW_RETTYPE, $FW_RET);
+}
+
+##################
+# Generate the zoom and scroll images with links if appropriate
+sub Map_zoomLink($$$)
+{
+  my ($cmd, $img, $alt) = @_;
+
+  my $prf;
+  $cmd =~ m/^(.*);([^;]*)$/;
+  
+  if($2) 
+  {
+    ($prf, $cmd) = ($1, $2);
+    $prf =~ s/&pos=.*//;
+  }
+  my ($d,$off) = split("=", $cmd, 2);
+
+  my $val = $FW_pos{$d};
+  $cmd = ($FW_detail ? "detail=".urlEncode($FW_detail): ($prf ? $prf : "room=".urlEncode($FW_room))) . "&pos=";
+
+  if($d eq "zoom") 
+  {
+    my $n = 0;
+    my @FW_zoom=("hour","qday","day","week","month","year","10years","20years");
+    my %FW_zoom = map { $_, $n++ } @FW_zoom;
+
+    $val = "day" 
+      if(!$val);
+    $val = $FW_zoom{$val};
+
+    return "" 
+      if(!defined($val) || $val+$off < 0 || $val+$off >= int(@FW_zoom));
+
+    $val = $FW_zoom[$val+$off];
+
+    return "" 
+      if(!$val);
+
+    # Approximation of the next offset.
+    my $w_off = $FW_pos{off};
+
+    $w_off = 0 
+      if(!$w_off);
+
+    if ($val eq "hour") 
+    {
+      $w_off =              $w_off*6;
+    } 
+    elsif($val eq "qday") 
+    {
+      $w_off = ($off < 0) ? $w_off*4 : int($w_off/6);
+    } 
+    elsif($val eq "day") 
+    {
+      $w_off = ($off < 0) ? $w_off*7 : int($w_off/4);
+    } 
+    elsif($val eq "week") 
+    {
+      $w_off = ($off < 0) ? $w_off*4 : int($w_off/7);
+    } 
+    elsif($val eq "month") 
+    {
+      $w_off = ($off < 0) ? $w_off*12: int($w_off/4);
+    } 
+    elsif($val eq "year") 
+    {
+      my @t = localtime();
+      $w_off =                         int(($w_off+$t[4]-11)/12); # 118880
+    } 
+    elsif($val eq "10years") 
+    {
+      $w_off =                         int($w_off/120);
+    } 
+    elsif($val eq "20years") 
+    {
+      $w_off =                         int($w_off/240);
+    }
+    $cmd .= "zoom=$val;off=$w_off";
+
+  } 
+  else 
+  {
+    return "" 
+      if((!$val && $off > 0) || ($val && $val+$off > 0)); # no future
+      
+    $off=($val ? $val+$off : $off);
+    my $zoom=$FW_pos{zoom};
+    $zoom = 0 if(!$zoom);
+    $cmd .= "zoom=$zoom;off=$off";
+  }
+
+  return "&nbsp;&nbsp;".FW_pHPlain("$cmd", FW_makeImage($img, $alt));
+}
 
 =pod
 =item device
@@ -339,24 +841,7 @@ sub Map_UpdateInternals($)
 
   <a name="Map"></a><h3>Map</h3>
   <ul>
-    In combination with the FHEM module <a href="#GroheOndusSmartDevice">GroheOndusSmartDevice</a> this module communicates with the <b>Grohe-Cloud</b>.<br>
-    <br>
-    You can get the configurations and measured values of the registered <b>Sense</b> und <b>SenseGuard</b> appliances 
-    and i.E. open/close the valve of a <b>SenseGuard</b> appliance.<br>
-    <br>
-    Once the <b>Map</b> is created the connected devices are recognized and created automatically in FHEM.<br>
-    From now on the devices can be controlled and changes in the <b>GroheOndusAPP</b> are synchronized with the state and readings of the devices.
-    <br>
-    <br>
-    <b>Notes</b>
-    <ul>
-      <li>This module communicates with the <b>Grohe-Cloud</b> - you have to be registered.
-      </li>
-      <li>Register your account directly at grohe - don't use "Sign in with Apple/Google/Facebook" or something else.
-      </li>
-      <li>There is a <b>debug-mode</b> you can enable/disable with the <b>attribute debug</b> to see more internals.
-      </li>
-    </ul>
+    This FHEM module displays a self-updating map with a certain location as center in the FHEMWEB UI.<br>
     <br>
     <a name="Map"></a><b>Define</b>
     <ul>
@@ -365,71 +850,29 @@ sub Map_UpdateInternals($)
       Example:<br>
       <ul>
         <code>
-        define Fordpass.Account Map<br>
+        define myMap Map<br>
         <br>
         </code>
       </ul>
     </ul><br>
     <a name="Map"></a><b>Set</b>
     <ul>
-      <li><a name="MapgroheOndusAccountPassword">groheOndusAccountPassword</a><br>
-        Set the password and store it.
-      </li>
-      <br>
-      <li><a name="MapdeletePassword">deletePassword</a><br>
-        Delete the password from store.
-      </li>
-      <br>
-      <li><a name="Mapupdate">update</a><br>
-        Login if needed and update all locations, rooms and appliances.
-      </li>
-      <br>
       <li><a name="Mapclearreadings">clearreadings</a><br>
         Clear all readings of the module.
       </li>
       <br>
-      <b><i>Debug-mode</i></b><br>
-      <br>
-      <li><a name="MapdebugGetDevicesState">debugGetDevicesState</a><br>
-        If debug-mode is enabled:<br>
-        get locations, rooms and appliances.
-      </li>
-      <br>
-      <li><a name="MapdebugLogin">debugLogin</a><br>
-        If debug-mode is enabled:<br>
-        login.
-      </li>
-      <br>
-      <li><a name="MapdebugSetLoginState">debugSetLoginState</a><br>
-        If debug-mode is enabled:<br>
-        set/reset internal statemachine to/from state "login" - if set all actions will be locked!.
-      </li>
-      <br>
-      <li><a name="MapdebugSetTokenExpired">debugSetTokenExpired</a><br>
-        If debug-mode is enabled:<br>
-        set the expiration timestamp of the login-token to now - next action will trigger a login.
-      </li>
     </ul>
     <br>
     <a name="Mapattr"></a><b>Attributes</b><br>
     <ul>
-      <li><a name="Mapusername">username</a><br>
-        Your registered Email-address to login to the grohe clound.
-      </li>
-      <br>
-      <li><a name="Mapautocreatedevices">autocreatedevices</a><br>
-        If <b>enabled</b> (default) then GroheOndusSmartDevices will be created automatically.<br>
-        If <b>disabled</b> then GroheOndusSmartDevices must be create manually.<br>
-      </li>
-      <br>
-      <li><a name="Mapinterval">interval</a><br>
-        Interval in seconds to poll for locations, rooms and appliances.
-        The default value is 60 seconds.
+      <li><a name="MaprefreshInterval">refreshInterval</a><br>
+        Interval in seconds to update the location.
+        The default value is 30 seconds.
       </li>
       <br>
       <li><a name="Mapdisable">disable</a><br>
         If <b>0</b> (default) then Map is <b>enabled</b>.<br>
-        If <b>1</b> then Map is <b>disabled</b> - no communication to the grohe cloud will be done.<br>
+        If <b>1</b> then Map is <b>disabled</b>.<br>
       </li>
       <br>
       <li><a name="Mapdebug">debug</a><br>
@@ -437,23 +880,46 @@ sub Map_UpdateInternals($)
         If <b>1</b> debugging mode is <b>enabled</b> - more internals and commands are shown.<br>
       </li>
       <br>
-      <li><a name="MapdebugJSON">debugJSON</a><br>
-        If <b>0</b> (default)<br>
-        If <b>1</b> if communication fails the json-payload of incoming telegrams is set to a reading.<br>
+      <li><a name="MapmapProvider">mapProvider</a><br>
+        Service wich generates the map.<br>
+      </li>
+      <br>
+      <li><a name="MapsourceDeviceName">sourceDeviceName</a><br>
+        Name of a FHEM device wich provides the location.<br>
+      </li>
+      <br>
+      <li><a name="MapsourceReadingNameLatitude">sourceReadingNameLatitude</a><br>
+        Name of the reading wich provides the latitude of the location.<br>
+      </li>
+      <br>
+      <li><a name="MapsourceReadingNameLongitude">sourceReadingNameLongitude</a><br>
+        Name of the reading wich provides the longitude of the location.<br>
+      </li>
+      <br>
+      <li><a name="MapframeWidth">frameWidth</a><br>
+        Width in pixels of the map.<br>
+      </li>
+      <br>
+      <li><a name="MapframeHeight">frameHeight</a><br>
+        Height in pixels of the map.<br>
+      </li>
+      <br>
+      <li><a name="MappinIcon">pinIcon</a><br>
+        Number of the icon wich marks the location.<br>
+      </li>
+      <br>
+      <li><a name="Mapzoom">zoom</a><br>
+        Zoom level 0 - 19 of the map.<br>
       </li>
     </ul><br>
     <a name="Mapreadings"></a><b>Readings</b>
     <ul>
-      <li><a>count_appliance</a><br>
-        Count of appliances.<br>
+      <li><a>Latitude</a><br>
+        Latitude.<br>
       </li>
       <br>
-      <li><a>count_locations</a><br>
-        Count of locations.<br>
-      </li>
-      <br>
-      <li><a>count_rooms</a><br>
-        Count of rooms.<br>
+      <li><a>Longitude</a><br>
+        Longitude.<br>
       </li>
     </ul><br>
     <a name="Mapinternals"></a><b>Internals</b>
@@ -469,17 +935,16 @@ sub Map_UpdateInternals($)
 
 =for :application/json;q=META.json 73_Map.pm
 {
-  "abstract": "Modul to communicate with the GroheCloud",
+  "abstract": "FHEM module displays a self-updating map with a certain location as center in the FHEMWEB UI",
   "x_lang": {
     "de": {
-      "abstract": "Modul zur Datenübertragung zur GroheCloud"
+      "abstract": "FHEM-Modul zur Darstellung einer Karte"
     }
   },
   "keywords": [
     "fhem-mod-device",
     "fhem-core",
-    "Grohe",
-    "Smart"
+    "Map"
   ],
   "release_status": "stable",
   "license": "GPL_2",
