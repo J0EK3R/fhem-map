@@ -30,7 +30,7 @@
 
 package main;
 
-my $VERSION = "0.0.2";
+my $VERSION = "0.0.3";
 
 use strict;
 use warnings;
@@ -54,8 +54,8 @@ sub Map_UpdateInternals($);
 sub Map_UpdateLocation($);
 sub Map_CreateURL($);
 sub Map_FwFn($$$$);
-sub Map_showMap($);
-sub Map_doShowMap($;$);
+sub Map_UpdateMap($);
+sub Map_doUpdateMap($;$);
 sub Map_zoomLink($$$);
 
 my $DebugMarker         = "Dbg";
@@ -85,8 +85,8 @@ sub Map_Initialize($)
   $hash->{FW_detailFn}  = \&Map_FwFn;
   $hash->{FW_atPageEnd} = 1;
   
-  $data{FWEXT}{"/Map_showMap"}{FUNC} = "Map_showMap";
-  $data{FWEXT}{"/Map_showMap"}{FORKABLE} = 1;
+  $data{FWEXT}{"/Map_UpdateMap"}{FUNC} = "Map_UpdateMap";
+  $data{FWEXT}{"/Map_UpdateMap"}{FORKABLE} = 1;
 
   $hash->{AttrList} = 
     "debug:0,1 " . 
@@ -630,36 +630,85 @@ sub Map_FwFn($$$$)
 #    $ret .= "<br>";
   }
 
-#  my $arg= "$FW_ME/Map_showMap?dev=$name".
-#              "&pos=" . join(";", map {"$_=$FW_pos{$_}"} keys %FW_pos);
-  my $arg= "$FW_ME/Map_showMap?dev=$name";
+  $ret .= "<div class=\"Map Map_$name\">\n";
 
-  $ret .= "<div class=\"Map Map_$name\">";
-
+  my $scriptSrc = "$FW_ME/Map_UpdateMap?dev=$name";
+  my $url = Map_CreateURL($hash);
   my $height = $hash->{helper}{FrameHeight};
   my $width = $hash->{helper}{FrameWidth};
-  my $frameIdentifier = "Embeded_Map_$name";
+  
+  my $scriptFrameIdentifier = "Script_Frame_$name";
+  my $mapFrameIdentifier = "Map_Frame_$name";
 
-  $ret .= "<iframe " .
-    "src='$arg' " .
+  my $refreshInterval_ms = $hash->{helper}{RefreshInterval} * 1000;
+
+  # by setting this hiden iframe's src the script to uptate is loaded from fhem 
+  my $scriptFrame = 
+    "<iframe " .
+    "id='$scriptFrameIdentifier' " .
+#    "src='$scriptSrc' " .
+    # hidden
+    "width='0' " .
+    "height='0' ".
+    "frameborder='0' " .
+    "></iframe>\n";
+
+  # this iframe contains the embedded iframe from the map-provider (OpenStreetMap)
+  my $mapFrame = 
+    "<iframe " .
+    "id='$mapFrameIdentifier' " .
     "width='$width' " .
     "height='$height' ".
     "frameborder='0' " .
     "scrolling='no' " .
     "marginheight='0' " .
     "marginwidth='0' " .
-    "name='$frameIdentifier' " .
-    "id='$frameIdentifier' " .
+    "src='$url' " .
     "></iframe>\n";
 
-  my $refreshInterval_ms = $hash->{helper}{RefreshInterval} * 1000;
-  my $script = "<script> " .
-    "window.setInterval('reloadIFrame();', $refreshInterval_ms); " .
-    "function reloadIFrame() { document.getElementById('$frameIdentifier').src='$arg'; } " .
-    "</script>";
+  # this script contains global variables
+  # this variables will be changed by the update-script
+  my $script = 
+    "<script type='module'> " .
+      # global variables
+      "window.scriptFrame = document.getElementById('$scriptFrameIdentifier'); " .
+      "window.mapFrame = document.getElementById('$mapFrameIdentifier'); " .
+      "window.url = '$url'; " .
+      "window.refreshInterval_ms = $refreshInterval_ms; " .
+      "window.frameheight = '$height'; " .
+      "window.framewidth = '$width'; " .
+    "</script>\n" .
+    
+    # this script will install the cyclic called update-function
+    "<script> " .
+      # start timer
+      "window.setTimeout('updateIFrame();', window.refreshInterval_ms); " .
+
+      # 
+      "function updateIFrame() " . 
+      "{ " .
+        # call script by setting the src of the iframe
+        "window.scriptFrame.src='$scriptSrc'; " .
+        
+        # start timer again with global-variable value
+        "window.setTimeout('updateIFrame();', window.refreshInterval_ms); " .
+    
+        "window.mapFrame.height = window.frameheight; " .
+        "window.mapFrame.width = window.framewidth; " .
+    
+        # only set source if needed
+        "if(window.mapFrame.src != window.url)" .
+        "{ " .
+          "window.mapFrame.src = window.url; " .
+        "} " .
+      "} " .
+    "</script>\n";
+
+  $ret .= $scriptFrame;
+  $ret .= $mapFrame;
   $ret .= $script;
 
-  $ret .= "</div>";
+  $ret .= "</div>\n";
 
   if(!$pageHash) 
   {
@@ -684,59 +733,40 @@ sub Map_FwFn($$$$)
 }
 
 ######################
-# Map_showMap($)
-sub Map_showMap($)
+# Map_UpdateMap($)
+sub Map_UpdateMap($)
 {
-  return Map_doShowMap($FW_webArgs{dev});
+  return Map_doUpdateMap($FW_webArgs{dev});
 }
 
 ######################
-# Map_doShowMap($)
-sub Map_doShowMap($;$)
+# Map_doUpdateMap($)
+sub Map_doUpdateMap($;$)
 {
   my ($name, $noHeader) = @_;
   my $hash = $defs{$name};
 
-  Log3($name, 3, "Map_doShowLog($name)");
+  Log3($name, 5, "Map_doUpdateMap($name)");
 
+  # update location
   Map_UpdateLocation($hash);
+  
   my $url = Map_CreateURL($hash);
-
   my $refreshInterval_ms = $hash->{helper}{RefreshInterval} * 1000;
-  my $frameIdentifier = "IFrame_Map_$name";
-  my $script = "";
+  my $height = $hash->{helper}{FrameHeight};
+  my $width = $hash->{helper}{FrameWidth};
 
-#  my $script = ""; #<script> " .
-#    "window.setInterval('reloadIFrame();', $refreshInterval_ms); " .
-#    "function reloadIFrame() { document.getElementById('IFrame_Map_$name').src='$url'; } " .
-#    "function reloadIFrame() { document.getElementById('IFrame_Map_$name').reload(); } " .
-#    "</script>";
-
-#  my $arg= "$FW_ME/Map_showMap?dev=$name".
-#              "&pos=" . join(";", map {"$_=$FW_pos{$_}"} keys %FW_pos);
-
-#  my $arg= "$FW_ME/Map_showMap?dev=$name";
-
-#  my $script_ = "<script> " .
-#    "window.setTimeout('reloadIFrame();', $refreshInterval_ms); " .
-#    "function reloadIFrame() { document.getElementById('IFrame_Map_$name').src='$arg'; } " .
-#    "</script>";
+  my $script = 
+    "<script> " .
+      # set new values in the variables in the DOM
+      "window.parent.refreshInterval_ms = $refreshInterval_ms; " .
+      "window.parent.url = '$url'; " .
+      "window.parent.frameheight = '$height'; " .
+      "window.parent.framewidth = '$width'; " .
+    "</script>";
 
   $FW_RETTYPE = "text/html";
-  FW_pO( 
-    "<iframe " .
-    "id='$frameIdentifier' " .
-    "name='$frameIdentifier' " .
-    "width='100%' " .
-    "height='100%' " .
-    "frameborder='0' " .
-    "scrolling='no' " .
-    "marginheight='0' " .
-    "marginwidth='0' " .
-    "icon='$hash->{helper}{Icon}' " .
-    "src='$url' " .
-    "></iframe> " .
-    $script);
+  FW_pO($script);
 
   return ($FW_RETTYPE, $FW_RET);
 }
