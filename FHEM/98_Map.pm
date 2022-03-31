@@ -30,7 +30,7 @@
 
 package main;
 
-my $VERSION = "0.0.3";
+my $VERSION = "0.0.4";
 
 use strict;
 use warnings;
@@ -57,6 +57,10 @@ sub Map_FwFn($$$$);
 sub Map_UpdateMap($);
 sub Map_doUpdateMap($;$);
 sub Map_zoomLink($$$);
+
+sub Map_Store($$$$);
+sub Map_Restore($$$$);
+sub Map_StoreRename($$$$);
 
 my $DebugMarker         = "Dbg";
 
@@ -92,6 +96,7 @@ sub Map_Initialize($)
     "debug:0,1 " . 
     "disable:0,1 " . 
     "mapProvider:osmtools " . 
+    "simulate:0,1 " . 
     "sourceDeviceName " . 
     "sourceReadingNameLatitude " . 
     "sourceReadingNameLongitude " . 
@@ -134,6 +139,7 @@ sub Map_Define($$)
 
   $hash->{helper}{DEBUG}                      = "0";
   $hash->{helper}{IsDisabled}                 = "0";
+  $hash->{helper}{Simulate}                   = "0";
   $hash->{helper}{SourceDeviceName}           = "";
   $hash->{helper}{SourceReadingNameLatitude}  = "";
   $hash->{helper}{SourceReadingNameLongitude} = "";
@@ -147,6 +153,9 @@ sub Map_Define($$)
   $hash->{helper}{FrameHeight}                = $DefaultFrameHeight;
   $hash->{helper}{RefreshInterval}            = $DefaultInterval_s;
   $hash->{helper}{Url}                        = "";
+
+  $hash->{helper}{Longitude}                  = Map_Restore( $hash, "GroheOndusSmartDevice_Define", "Longitude", $hash->{helper}{Longitude});
+  $hash->{helper}{Latitude}                   = Map_Restore( $hash, "GroheOndusSmartDevice_Define", "Latitude", $hash->{helper}{Latitude});
 
   # set default Attributes
   if (AttrVal($name, "room", "none" ) eq "none")
@@ -176,6 +185,12 @@ sub Map_Delete($$)
 {
   my ( $hash, $name ) = @_;
 
+  Log3($name, 4, "Map_Delete($name)");
+
+  # delete all stored values
+  Map_Store($hash, "Map_Delete", "Latitude", undef);
+  Map_Store($hash, "Map_Delete", "Longitude", undef);
+
   return undef;
 }
 
@@ -183,8 +198,15 @@ sub Map_Delete($$)
 # Map_Rename( $new, $old )
 sub Map_Rename(@)
 {
-  my ( $new, $old ) = @_;
-  my $hash = $defs{$new};
+  my ($new_name, $old_name) = @_;
+  my $hash = $defs{$new_name};
+  my $name = $hash->{NAME};
+
+  Log3($name, 4, "Map_Rename($name)");
+
+  # rename all stored values
+  Map_StoreRename($hash, "Map_Rename", $old_name, "Latitude");
+  Map_StoreRename($hash, "Map_Rename", $old_name, "Longitude");
 
   return undef;
 }
@@ -235,6 +257,22 @@ sub Map_Attr(@)
       $hash->{helper}{DEBUG} = "0";
     }
     Log3($name, 3, "Map_Attr($name) - debug $hash->{helper}{DEBUG}");
+
+    Map_UpdateInternals($hash);
+  }
+  
+  # Attribute "simulate"
+  elsif (lc $attrName eq lc "simulate" )
+  {
+    if ( $cmd eq "set")
+    {
+      $hash->{helper}{Simulate} = "$attrVal";
+    } 
+    elsif ( $cmd eq "del" )
+    {
+      $hash->{helper}{Simulate} = "0";
+    }
+    Log3($name, 3, "Map_Attr($name) - simulate $hash->{helper}{simulate}");
 
     Map_UpdateInternals($hash);
   }
@@ -487,6 +525,7 @@ sub Map_UpdateInternals($)
   {
     $hash->{DEBUG_IsDisabled}                       = $hash->{helper}{IsDisabled};
 
+    $hash->{DEBUG_Simulate}                         = $hash->{helper}{Simulate};
     $hash->{DEBUG_SourceDeviceName}                 = $hash->{helper}{SourceDeviceName};
     $hash->{DEBUG_SourceSourceReadingNameLatitude}  = $hash->{helper}{SourceReadingNameLatitude};
     $hash->{DEBUG_SourceReadingNameLongitude}       = $hash->{helper}{SourceReadingNameLongitude};
@@ -522,19 +561,27 @@ sub Map_UpdateLocation($)
   Log3($name, 5, "Map_UpdateLocation($name)");
   
   # Change latitude and longitude to get a new location if no sourcedevice is defined for debugging
-  my $longitude = $hash->{helper}{Longitude} + 0.001;
-  my $latitude = $hash->{helper}{Latitude} + 0.001;
-  my $sourceDeviceName = $hash->{helper}{SourceDeviceName};
+  my $longitude         = $hash->{helper}{Longitude};
+  my $latitude          = $hash->{helper}{Latitude};
+  my $sourceDeviceName  = $hash->{helper}{SourceDeviceName};
   
-  if(defined($defs{$sourceDeviceName}))
+  if($hash->{helper}{Simulate} ne "0")
   {
-    $longitude = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLongitude}, $longitude);
-    $latitude = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLatitude}, $latitude);
+    $longitude  += 0.001;
+    $latitude   += 0.001;
+  }
+  elsif(defined($defs{$sourceDeviceName}))
+  {
+    $longitude  = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLongitude}, $longitude);
+    $latitude   = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLatitude}, $latitude);
   }
   
-  $hash->{helper}{Latitude} = $latitude;
-  $hash->{helper}{Longitude} = $longitude;
+  $hash->{helper}{Latitude}   = $latitude;
+  $hash->{helper}{Longitude}  = $longitude;
   Map_UpdateInternals($hash);
+
+  Map_Store($hash, "Map_UpdateLocation", "Latitude", $hash->{helper}{Latitude});
+  Map_Store($hash, "Map_UpdateLocation", "Longitude", $hash->{helper}{Longitude});
 
   readingsBeginUpdate($hash);
   readingsBulkUpdate($hash, "Latitude", "$latitude");
@@ -552,7 +599,7 @@ sub Map_CreateURL($)
   Log3($name, 5, "Map_CreateURL($name)");
   
   my $longitude = $hash->{helper}{Longitude};
-  my $latitude = $hash->{helper}{Latitude};
+  my $latitude  = $hash->{helper}{Latitude};
 
    my $url = ""; 
 
@@ -862,6 +909,90 @@ sub Map_zoomLink($$$)
   }
 
   return "&nbsp;&nbsp;".FW_pHPlain("$cmd", FW_makeImage($img, $alt));
+}
+
+##################################
+# Map_Store($$$$)
+sub Map_Store($$$$)
+{
+  my ($hash, $sender, $key, $value) = @_;
+  my $type = $hash->{TYPE};
+  my $name = $hash->{NAME};
+
+  my $deviceKey = $type . "_" . $name . "_" . $key;
+
+  my $setKeyError = setKeyValue($deviceKey, $value);
+  if(defined($setKeyError))
+  {
+    Log3($name, 3, "$sender($name) - setKeyValue $deviceKey error: $setKeyError");
+  }
+  else
+  {
+    Log3($name, 5, "$sender($name) - setKeyValue: $deviceKey -> $value");
+  }
+}
+
+##################################
+# Map_Restore($$$$)
+sub Map_Restore($$$$)
+{
+  my ($hash, $sender, $key, $defaultvalue) = @_;
+  my $type = $hash->{TYPE};
+  my $name = $hash->{NAME};
+
+  my $deviceKey = $type . "_" . $name . "_" . $key;
+
+  my ($getKeyError, $value) = getKeyValue($deviceKey);
+  $value = $defaultvalue
+    if(defined($getKeyError) or
+      not defined ($value));
+
+  if(defined($getKeyError))
+  {
+    Log3($name, 3, "$sender($name) - getKeyValue $deviceKey error: $getKeyError");
+  }
+  else
+  {
+    Log3($name, 5, "$sender($name) - getKeyValue: $deviceKey -> $value");
+  }
+
+  return $value;
+}
+
+##################################
+# Map_StoreRename($hash, $sender, $old_name, $key)
+sub Map_StoreRename($$$$)
+{
+  my ($hash, $sender, $old_name, $key) = @_;
+  my $type = $hash->{TYPE};
+  my $new_name = $hash->{NAME};
+
+  my $old_deviceKey = $type . "_" . $old_name . "_" . $key;
+  my $new_deviceKey = $type . "_" . $new_name . "_" . $key;
+
+  my ($getKeyError, $value) = getKeyValue($old_deviceKey);
+
+  if(defined($getKeyError))
+  {
+    Log3($new_name, 3, "$sender($new_name) - getKeyValue $old_deviceKey error: $getKeyError");
+  }
+  else
+  {
+    Log3($new_name, 5, "$sender($new_name) - getKeyValue: $old_deviceKey -> $value");
+
+    my $setKeyError = setKeyValue($new_deviceKey, $value);
+    if(defined($setKeyError))
+    {
+      Log3($new_name, 3, "$sender($new_name) - setKeyValue $new_deviceKey error: $setKeyError");
+    }
+    else
+    {
+      Log3($new_name, 5, "$sender($new_name) - setKeyValue: $new_deviceKey -> $value");
+    }
+  }
+
+  # delete old key
+  setKeyValue($old_deviceKey, undef);
 }
 
 =pod
