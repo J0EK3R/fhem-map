@@ -30,7 +30,7 @@
 
 package main;
 
-my $VERSION = "0.0.4";
+my $VERSION = "0.0.5";
 
 use strict;
 use warnings;
@@ -56,19 +56,19 @@ sub Map_CreateURL($);
 sub Map_FwFn($$$$);
 sub Map_UpdateMap($);
 sub Map_doUpdateMap($;$);
-sub Map_zoomLink($$$);
 
 sub Map_Store($$$$);
 sub Map_Restore($$$$);
 sub Map_StoreRename($$$$);
 
-my $DebugMarker         = "Dbg";
+my $ReadingsDebugMarker = "Dbg";
+my $DefaultMode         = "source";
 
 my $DefaultIcon         = "4";
 my $DefaultZoom         = "15";
-my $DefaultInterval_s   = "30";
-my $DefaultFrameWidth   = 800;
-my $DefaultFrameHeight  = 600;
+my $DefaultInterval_s   = "5";
+my $DefaultFrameWidth   = "100%";
+my $DefaultFrameHeight  = "800";
 my $DefaultMapProvider  = "osmtools";
 
 #####################################
@@ -94,9 +94,8 @@ sub Map_Initialize($)
 
   $hash->{AttrList} = 
     "debug:0,1 " . 
-    "disable:0,1 " . 
+    "mode:$DefaultMode,simulation,off " . 
     "mapProvider:osmtools " . 
-    "simulate:0,1 " . 
     "sourceDeviceName " . 
     "sourceReadingNameLatitude " . 
     "sourceReadingNameLongitude " . 
@@ -134,19 +133,24 @@ sub Map_Define($$)
     if ($missingModul);
 
   my $name = $a[0];
+  
+  my $id = $hash->{FUUID};
+  $id =~ s/[^a-zA-Z0-9,]//g;
+  
   $hash->{VERSION}                        = $VERSION;
   $hash->{NOTIFYDEV}                      = "global,$name";
-
+  
+  $hash->{helper}{ID}                         = $id;
   $hash->{helper}{DEBUG}                      = "0";
   $hash->{helper}{IsDisabled}                 = "0";
-  $hash->{helper}{Simulate}                   = "0";
-  $hash->{helper}{SourceDeviceName}           = "";
-  $hash->{helper}{SourceReadingNameLatitude}  = "";
-  $hash->{helper}{SourceReadingNameLongitude} = "";
+  $hash->{helper}{Mode}                       = $DefaultMode;
+  $hash->{helper}{SourceDeviceName}           = "global";
+  $hash->{helper}{SourceReadingNameLatitude}  = "latitude";
+  $hash->{helper}{SourceReadingNameLongitude} = "longitude";
 
   $hash->{helper}{MapProvider}                = "OpenStreeMap";
-  $hash->{helper}{Longitude}                  = "8";
-  $hash->{helper}{Latitude}                   = "49";
+  $hash->{helper}{Latitude}                   = "52.516275";
+  $hash->{helper}{Longitude}                  = "13.377704";
   $hash->{helper}{Icon}                       = $DefaultIcon;
   $hash->{helper}{Zoom}                       = $DefaultZoom;
   $hash->{helper}{FrameWidth}                 = $DefaultFrameWidth;
@@ -154,14 +158,23 @@ sub Map_Define($$)
   $hash->{helper}{RefreshInterval}            = $DefaultInterval_s;
   $hash->{helper}{Url}                        = "";
 
-  $hash->{helper}{Longitude}                  = Map_Restore( $hash, "GroheOndusSmartDevice_Define", "Longitude", $hash->{helper}{Longitude});
-  $hash->{helper}{Latitude}                   = Map_Restore( $hash, "GroheOndusSmartDevice_Define", "Latitude", $hash->{helper}{Latitude});
+  $hash->{helper}{Longitude}                  = Map_Restore( $hash, "MAP_Define", "Longitude", $hash->{helper}{Longitude});
+  $hash->{helper}{Latitude}                   = Map_Restore( $hash, "Map_Define", "Latitude", $hash->{helper}{Latitude});
 
-  # set default Attributes
-  if (AttrVal($name, "room", "none" ) eq "none")
+  if(Map_Restore( $hash, "MAP_Define", "FirstDefine", $id) eq $id)
   {
-    CommandAttr(undef, $name . " room Maps");
+    # set default Attributes
+    if (AttrVal($name, "room", "none" ) eq "none")
+    {
+      CommandAttr(undef, $name . " room Maps");
+    }
+
+    if (AttrVal($name, "event-on-change-reading", "none" ) eq "none")
+    {
+      CommandAttr(undef, $name . " event-on-change-reading .*");
+    }
   }
+  Map_Store($hash, "MAP_Define", "FirstDefine", "False");
 
   readingsSingleUpdate( $hash, "state", "initialized", 1 );
 
@@ -188,6 +201,7 @@ sub Map_Delete($$)
   Log3($name, 4, "Map_Delete($name)");
 
   # delete all stored values
+  Map_Store($hash, "Map_Delete", "FirstDefine", undef);
   Map_Store($hash, "Map_Delete", "Latitude", undef);
   Map_Store($hash, "Map_Delete", "Longitude", undef);
 
@@ -205,6 +219,7 @@ sub Map_Rename(@)
   Log3($name, 4, "Map_Rename($name)");
 
   # rename all stored values
+  Map_StoreRename($hash, "Map_Rename", $old_name, "FirstDefine");
   Map_StoreRename($hash, "Map_Rename", $old_name, "Latitude");
   Map_StoreRename($hash, "Map_Rename", $old_name, "Longitude");
 
@@ -261,18 +276,18 @@ sub Map_Attr(@)
     Map_UpdateInternals($hash);
   }
   
-  # Attribute "simulate"
-  elsif (lc $attrName eq lc "simulate" )
+  # Attribute "mode"
+  elsif (lc $attrName eq lc "mode" )
   {
     if ( $cmd eq "set")
     {
-      $hash->{helper}{Simulate} = "$attrVal";
+      $hash->{helper}{Mode} = "$attrVal";
     } 
     elsif ( $cmd eq "del" )
     {
-      $hash->{helper}{Simulate} = "0";
+      $hash->{helper}{Mode} = $DefaultMode;
     }
-    Log3($name, 3, "Map_Attr($name) - simulate $hash->{helper}{simulate}");
+    Log3($name, 3, "Map_Attr($name) - mode $hash->{helper}{Mode}");
 
     Map_UpdateInternals($hash);
   }
@@ -501,12 +516,28 @@ sub Map_Set($@)
     fhem("deletereading $name $mask", 1);
     return;
   }
+  ### Command "latitude"
+  elsif( lc $cmd eq lc "latitude" )
+  {
+    $hash->{helper}{Latitude} = join( " ", @args );
+    Map_UpdateLocation($hash);
+    return;
+  }
+  ### Command "longitude"
+  elsif( lc $cmd eq lc "longitude" )
+  {
+    $hash->{helper}{Longitude} = join( " ", @args );
+    Map_UpdateLocation($hash);
+    return;
+  }
   ### create Command list
   else
   {
     my $list = "";
 
-    $list .= "clearreadings:$DebugMarker.*,.* ";
+    $list .= "latitude ";
+    $list .= "longitude ";
+    $list .= "clearreadings:$ReadingsDebugMarker.*,.* ";
 
     return "Unknown argument $cmd, choose one of $list";
   }
@@ -525,7 +556,8 @@ sub Map_UpdateInternals($)
   {
     $hash->{DEBUG_IsDisabled}                       = $hash->{helper}{IsDisabled};
 
-    $hash->{DEBUG_Simulate}                         = $hash->{helper}{Simulate};
+    $hash->{DEBUG_ID}                               = $hash->{helper}{ID};
+    $hash->{DEBUG_Mode}                             = $hash->{helper}{Mode};
     $hash->{DEBUG_SourceDeviceName}                 = $hash->{helper}{SourceDeviceName};
     $hash->{DEBUG_SourceSourceReadingNameLatitude}  = $hash->{helper}{SourceReadingNameLatitude};
     $hash->{DEBUG_SourceReadingNameLongitude}       = $hash->{helper}{SourceReadingNameLongitude};
@@ -565,27 +597,45 @@ sub Map_UpdateLocation($)
   my $latitude          = $hash->{helper}{Latitude};
   my $sourceDeviceName  = $hash->{helper}{SourceDeviceName};
   
-  if($hash->{helper}{Simulate} ne "0")
+  my $savedLongitude = $longitude;
+  my $savedLatitude = $latitude;
+  
+  # mode is "source" 
+  if($hash->{helper}{Mode} eq $DefaultMode)
+  {
+    # get readings from sourcedevice
+    if(defined($defs{$sourceDeviceName}))
+    {
+      $longitude  = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLongitude}, $longitude);
+      $latitude   = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLatitude}, $latitude);
+    }
+  }
+  # if mode is simulation
+  elsif($hash->{helper}{Mode} eq "simulation")
   {
     $longitude  += 0.001;
     $latitude   += 0.001;
   }
-  elsif(defined($defs{$sourceDeviceName}))
+  # mode is "off"
+  else
   {
-    $longitude  = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLongitude}, $longitude);
-    $latitude   = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLatitude}, $latitude);
   }
-  
-  $hash->{helper}{Latitude}   = $latitude;
-  $hash->{helper}{Longitude}  = $longitude;
-  Map_UpdateInternals($hash);
 
-  Map_Store($hash, "Map_UpdateLocation", "Latitude", $hash->{helper}{Latitude});
-  Map_Store($hash, "Map_UpdateLocation", "Longitude", $hash->{helper}{Longitude});
+  # position has changed?  
+  if($savedLatitude ne $latitude or
+    $savedLongitude ne $longitude)
+  {
+    $hash->{helper}{Latitude}   = $latitude;
+    $hash->{helper}{Longitude}  = $longitude;
+    Map_UpdateInternals($hash);
+
+    Map_Store($hash, "Map_UpdateLocation", "Latitude", $hash->{helper}{Latitude});
+    Map_Store($hash, "Map_UpdateLocation", "Longitude", $hash->{helper}{Longitude});
+  }
 
   readingsBeginUpdate($hash);
-  readingsBulkUpdate($hash, "Latitude", "$latitude");
-  readingsBulkUpdate($hash, "Longitude", "$longitude");
+  readingsBulkUpdate($hash, "latitude", "$latitude");
+  readingsBulkUpdate($hash, "longitude", "$longitude");
   readingsEndUpdate($hash, 1);
 }
 
@@ -603,7 +653,7 @@ sub Map_CreateURL($)
 
    my $url = ""; 
 
-   if($hash->{DEBUG_MapProvider} eq "googlemapsXXX")
+   if($hash->{helper}{MapProvider} eq "googlemapsXXX")
    {
 #     $url = "https://maps.google.de/maps/search/?api=1" .
 #       "&query=$latitude,$longitude";
@@ -614,7 +664,7 @@ sub Map_CreateURL($)
        "&center=$latitude%2$longitude" .
        "";
    }
-   elsif($hash->{DEBUG_MapProvider} eq "openstreetmap")
+   elsif($hash->{helper}{MapProvider} eq "openstreetmap")
    {
      $url = "http://www.openstreetmap.org/?" .
        "mlat=$latitude" .
@@ -622,7 +672,8 @@ sub Map_CreateURL($)
        "#map=$hash->{helper}{Zoom}/$latitude/$longitude" .
        "";
    }
-   else # default: ($hash->{DEBUG_MapProvider} eq "osmtools")
+   # default: ($hash->{helper}{MapProvider} eq "osmtools")
+   else 
    {
      $url = "http://m.osmtools.de/?" .
        "zoom=$hash->{helper}{Zoom}" . 
@@ -648,6 +699,8 @@ sub Map_FwFn($$$$)
   my ($FW_wname, $name, $room, $pageHash) = @_; # pageHash is set for summaryFn.
   my $hash = $defs{$name};
   my $ret = "";
+  
+  my $id = $hash->{helper}{ID};
 
   my $isFirst = (!$pageHash || !$pageHash->{mapLoaded});
 
@@ -718,35 +771,35 @@ sub Map_FwFn($$$$)
   my $script = 
     "<script type='module'> " .
       # global variables
-      "window.scriptFrame = document.getElementById('$scriptFrameIdentifier'); " .
-      "window.mapFrame = document.getElementById('$mapFrameIdentifier'); " .
-      "window.url = '$url'; " .
-      "window.refreshInterval_ms = $refreshInterval_ms; " .
-      "window.frameheight = '$height'; " .
-      "window.framewidth = '$width'; " .
+      "window.scriptFrame_" . $id . " = document.getElementById('$scriptFrameIdentifier'); " .
+      "window.mapFrame_" . $id . " = document.getElementById('$mapFrameIdentifier'); " .
+      "window.url_" . $id . " = '$url'; " .
+      "window.refreshInterval_ms_" . $id . " = $refreshInterval_ms; " .
+      "window.frameheight_" . $id . " = '$height'; " .
+      "window.framewidth_" . $id . " = '$width'; " .
     "</script>\n" .
     
     # this script will install the cyclic called update-function
-    "<script> " .
+    "<script type='text/javascript'> " .
       # start timer
-      "window.setTimeout('updateIFrame();', window.refreshInterval_ms); " .
+      "window.setTimeout('updateIFrame_" . $id . "();', window.refreshInterval_ms_" . $id . "); " .
 
       # 
-      "function updateIFrame() " . 
+      "function updateIFrame_" . $id . "() " . 
       "{ " .
         # call script by setting the src of the iframe
-        "window.scriptFrame.src='$scriptSrc'; " .
+        "window.scriptFrame_" . $id . ".src='$scriptSrc'; " .
         
         # start timer again with global-variable value
-        "window.setTimeout('updateIFrame();', window.refreshInterval_ms); " .
+        "window.setTimeout('updateIFrame_" . $id . "();', window.refreshInterval_ms_" . $id . "); " .
     
-        "window.mapFrame.height = window.frameheight; " .
-        "window.mapFrame.width = window.framewidth; " .
+        "window.mapFrame_" . $id . ".height = window.frameheight_" . $id . "; " .
+        "window.mapFrame_" . $id . ".width = window.framewidth_" . $id . "; " .
     
         # only set source if needed
-        "if(window.mapFrame.src != window.url)" .
+        "if(window.mapFrame_" . $id . ".src != window.url_" . $id . ")" .
         "{ " .
-          "window.mapFrame.src = window.url; " .
+          "window.mapFrame_" . $id . ".src = window.url_" . $id . "; " .
         "} " .
       "} " .
     "</script>\n";
@@ -792,6 +845,7 @@ sub Map_doUpdateMap($;$)
 {
   my ($name, $noHeader) = @_;
   my $hash = $defs{$name};
+  my $id = $hash->{helper}{ID};
 
   Log3($name, 5, "Map_doUpdateMap($name)");
 
@@ -804,12 +858,12 @@ sub Map_doUpdateMap($;$)
   my $width = $hash->{helper}{FrameWidth};
 
   my $script = 
-    "<script> " .
+   "<script type='text/javascript'> " .
       # set new values in the variables in the DOM
-      "window.parent.refreshInterval_ms = $refreshInterval_ms; " .
-      "window.parent.url = '$url'; " .
-      "window.parent.frameheight = '$height'; " .
-      "window.parent.framewidth = '$width'; " .
+      "window.parent.refreshInterval_ms_" . $id . " = $refreshInterval_ms; " .
+      "window.parent.url_" . $id . " = '$url'; " .
+      "window.parent.frameheight_" . $id . " = '$height'; " .
+      "window.parent.framewidth_" . $id . " = '$width'; " .
     "</script>";
 
   $FW_RETTYPE = "text/html";
@@ -818,106 +872,13 @@ sub Map_doUpdateMap($;$)
   return ($FW_RETTYPE, $FW_RET);
 }
 
-##################
-# Generate the zoom and scroll images with links if appropriate
-sub Map_zoomLink($$$)
-{
-  my ($cmd, $img, $alt) = @_;
-
-  my $prf;
-  $cmd =~ m/^(.*);([^;]*)$/;
-  
-  if($2) 
-  {
-    ($prf, $cmd) = ($1, $2);
-    $prf =~ s/&pos=.*//;
-  }
-  my ($d,$off) = split("=", $cmd, 2);
-
-  my $val = $FW_pos{$d};
-  $cmd = ($FW_detail ? "detail=".urlEncode($FW_detail): ($prf ? $prf : "room=".urlEncode($FW_room))) . "&pos=";
-
-  if($d eq "zoom") 
-  {
-    my $n = 0;
-    my @FW_zoom=("hour","qday","day","week","month","year","10years","20years");
-    my %FW_zoom = map { $_, $n++ } @FW_zoom;
-
-    $val = "day" 
-      if(!$val);
-    $val = $FW_zoom{$val};
-
-    return "" 
-      if(!defined($val) || $val+$off < 0 || $val+$off >= int(@FW_zoom));
-
-    $val = $FW_zoom[$val+$off];
-
-    return "" 
-      if(!$val);
-
-    # Approximation of the next offset.
-    my $w_off = $FW_pos{off};
-
-    $w_off = 0 
-      if(!$w_off);
-
-    if ($val eq "hour") 
-    {
-      $w_off =              $w_off*6;
-    } 
-    elsif($val eq "qday") 
-    {
-      $w_off = ($off < 0) ? $w_off*4 : int($w_off/6);
-    } 
-    elsif($val eq "day") 
-    {
-      $w_off = ($off < 0) ? $w_off*7 : int($w_off/4);
-    } 
-    elsif($val eq "week") 
-    {
-      $w_off = ($off < 0) ? $w_off*4 : int($w_off/7);
-    } 
-    elsif($val eq "month") 
-    {
-      $w_off = ($off < 0) ? $w_off*12: int($w_off/4);
-    } 
-    elsif($val eq "year") 
-    {
-      my @t = localtime();
-      $w_off =                         int(($w_off+$t[4]-11)/12); # 118880
-    } 
-    elsif($val eq "10years") 
-    {
-      $w_off =                         int($w_off/120);
-    } 
-    elsif($val eq "20years") 
-    {
-      $w_off =                         int($w_off/240);
-    }
-    $cmd .= "zoom=$val;off=$w_off";
-
-  } 
-  else 
-  {
-    return "" 
-      if((!$val && $off > 0) || ($val && $val+$off > 0)); # no future
-      
-    $off=($val ? $val+$off : $off);
-    my $zoom=$FW_pos{zoom};
-    $zoom = 0 if(!$zoom);
-    $cmd .= "zoom=$zoom;off=$off";
-  }
-
-  return "&nbsp;&nbsp;".FW_pHPlain("$cmd", FW_makeImage($img, $alt));
-}
-
 ##################################
 # Map_Store($$$$)
 sub Map_Store($$$$)
 {
   my ($hash, $sender, $key, $value) = @_;
   my $type = $hash->{TYPE};
-  my $name = $hash->{NAME};
+  my $name = $hash->{FUUID};
 
   my $deviceKey = $type . "_" . $name . "_" . $key;
 
@@ -938,7 +899,7 @@ sub Map_Restore($$$$)
 {
   my ($hash, $sender, $key, $defaultvalue) = @_;
   my $type = $hash->{TYPE};
-  my $name = $hash->{NAME};
+  my $name = $hash->{FUUID};
 
   my $deviceKey = $type . "_" . $name . "_" . $key;
 
@@ -965,7 +926,7 @@ sub Map_StoreRename($$$$)
 {
   my ($hash, $sender, $old_name, $key) = @_;
   my $type = $hash->{TYPE};
-  my $new_name = $hash->{NAME};
+  my $new_name = $hash->{FUUID};
 
   my $old_deviceKey = $type . "_" . $old_name . "_" . $key;
   my $new_deviceKey = $type . "_" . $new_name . "_" . $key;
@@ -997,7 +958,7 @@ sub Map_StoreRename($$$$)
 
 =pod
 =item device
-=item summary module to communicate with the GroheOndusCloud
+=item summary module to display a map in fhem's UI FHEMWEB 
 =begin html
 
   <a name="Map"></a><h3>Map</h3>
@@ -1022,13 +983,21 @@ sub Map_StoreRename($$$$)
         Clear all readings of the module.
       </li>
       <br>
+      <li><a name="Maplongitude">longitude</a><br>
+        Set longitude of the location.
+      </li>
+      <br>
+      <li><a name="Maplatitude">latitude</a><br>
+        Set latitude of the location.
+      </li>
+      <br>
     </ul>
     <br>
     <a name="Mapattr"></a><b>Attributes</b><br>
     <ul>
       <li><a name="MaprefreshInterval">refreshInterval</a><br>
-        Interval in seconds to update the location.
-        The default value is 30 seconds.
+        Interval in seconds to refresh the map.
+        The default value is 5 seconds.
       </li>
       <br>
       <li><a name="Mapdisable">disable</a><br>
@@ -1045,24 +1014,69 @@ sub Map_StoreRename($$$$)
         Service wich generates the map.<br>
       </li>
       <br>
+      <li><a name="Mapmode">mode</a><br>
+        Mode of gathering the location.<br>
+        <ul>
+          <li><b>source</b><br>
+          Latitude and Longitude are fetched from the sourcedevice.
+          </li>
+          <br>
+          <li><b>simulation</b><br>
+          Latitude and Longitude are incremented to simulate a movement.
+          </li>
+          <br>
+          <li><b>off</b><br>
+          Latitude and Longitude have to be changed by setting them.
+          </li>
+        </ul>
+      </li>
+      <br>
       <li><a name="MapsourceDeviceName">sourceDeviceName</a><br>
         Name of a FHEM device wich provides the location.<br>
       </li>
       <br>
       <li><a name="MapsourceReadingNameLatitude">sourceReadingNameLatitude</a><br>
-        Name of the reading wich provides the latitude of the location.<br>
+        Name of the sourcedevice's reading wich provides the latitude of the location.<br>
       </li>
       <br>
       <li><a name="MapsourceReadingNameLongitude">sourceReadingNameLongitude</a><br>
-        Name of the reading wich provides the longitude of the location.<br>
+        Name of the sourcedevice's reading wich provides the longitude of the location.<br>
       </li>
       <br>
       <li><a name="MapframeWidth">frameWidth</a><br>
-        Width in pixels of the map.<br>
+        Width of the map in pixels or percent.<br>
+        <br>
+        Example:<br>
+        <ul>
+          Percentage:<br>
+          <code>
+          attr &lt;name&gt; frameWidth 100%<br>
+          </code>
+          <br>
+          Pixel:<br>
+          <code>
+          attr &lt;name&gt; frameWidth 400<br>
+          <br>
+          </code>
+        </ul>
       </li>
       <br>
       <li><a name="MapframeHeight">frameHeight</a><br>
-        Height in pixels of the map.<br>
+        Height of the map in pixels or percent.<br>
+        <br>
+        Example:<br>
+        <ul>
+          Percentage:<br>
+          <code>
+          attr &lt;name&gt; frameHeight 100%<br>
+          </code>
+          <br>
+          Pixel:<br>
+          <code>
+          attr &lt;name&gt; frameHeight 400<br>
+          <br>
+          </code>
+        </ul>
       </li>
       <br>
       <li><a name="MappinIcon">pinIcon</a><br>
