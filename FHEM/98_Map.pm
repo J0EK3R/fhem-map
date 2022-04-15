@@ -30,7 +30,7 @@
 
 package main;
 
-my $VERSION = "0.0.5";
+my $VERSION = "0.0.6";
 
 use strict;
 use warnings;
@@ -61,15 +61,16 @@ sub Map_Store($$$$);
 sub Map_Restore($$$$);
 sub Map_StoreRename($$$$);
 
-my $ReadingsDebugMarker = "Dbg";
-my $DefaultMode         = "source";
+my $ReadingsDebugMarker               = "Dbg";
+my $DefaultMode                       = "source";
 
-my $DefaultIcon         = "4";
-my $DefaultZoom         = "15";
-my $DefaultInterval_s   = "5";
-my $DefaultFrameWidth   = "100%";
-my $DefaultFrameHeight  = "800";
-my $DefaultMapProvider  = "osmtools";
+my $DefaultIcon                       = "4";
+my $DefaultZoom                       = "15";
+my $DefaultInterval_s                 = "5";
+my $DefaultFrameWidth                 = "100%";
+my $DefaultFrameHeight                = "800";
+my $DefaultFrameShowDetailLinkInGroup = "1";
+my $DefaultMapProvider                = "osmtools";
 
 #####################################
 # Map_Initialize( $hash )
@@ -102,6 +103,7 @@ sub Map_Initialize($)
     "refreshInterval " . 
     "frameWidth " . 
     "frameHeight " . 
+    "frameShowDetailLinkInGroup:1,0 " . 
     "pinIcon:0,1,4,5,6,7,8,9,10,11 " . 
     "zoom:0,1,2,3,4,5,6,7,8,9,10,11,14,15,16,17,18,19 " . 
     $readingFnAttributes;
@@ -155,6 +157,7 @@ sub Map_Define($$)
   $hash->{helper}{Zoom}                       = $DefaultZoom;
   $hash->{helper}{FrameWidth}                 = $DefaultFrameWidth;
   $hash->{helper}{FrameHeight}                = $DefaultFrameHeight;
+  $hash->{helper}{FrameShowDetailLinkInGroup} = $DefaultFrameShowDetailLinkInGroup;
   $hash->{helper}{RefreshInterval}            = $DefaultInterval_s;
   $hash->{helper}{Url}                        = "";
 
@@ -336,6 +339,22 @@ sub Map_Attr(@)
       $hash->{helper}{FrameHeight} = $DefaultFrameHeight;
     }
     Log3($name, 3, "Map_Attr($name) - frameHeight $hash->{helper}{FrameHeight}");
+
+    Map_UpdateInternals($hash);
+  }
+
+  # Attribute "frameShowDetailLinkInGroup"
+  elsif (lc $attrName eq lc "frameShowDetailLinkInGroup" )
+  {
+    if ( $cmd eq "set")
+    {
+      $hash->{helper}{FrameShowDetailLinkInGroup} = "$attrVal";
+    } 
+    elsif ( $cmd eq "del" )
+    {
+      $hash->{helper}{FrameShowDetailLinkInGroup} = $DefaultFrameShowDetailLinkInGroup;
+    }
+    Log3($name, 3, "Map_Attr($name) - frameWidth $hash->{helper}{FrameShowDetailLinkInGroup}");
 
     Map_UpdateInternals($hash);
   }
@@ -569,6 +588,7 @@ sub Map_UpdateInternals($)
     $hash->{DEBUG_Zoom}                             = $hash->{helper}{Zoom};
     $hash->{DEBUG_FrameWidth}                       = $hash->{helper}{FrameWidth};
     $hash->{DEBUG_FrameHeight}                      = $hash->{helper}{FrameHeight};
+    $hash->{DEBUG_FrameShowDetailLinkInGroup}       = $hash->{helper}{FrameShowDetailLinkInGroup};
     $hash->{DEBUG_RefreshInterval}                  = $hash->{helper}{RefreshInterval};
     $hash->{DEBUG_Url}                              = $hash->{helper}{Url};
   }
@@ -742,7 +762,7 @@ sub Map_FwFn($$$$)
 
   my $refreshInterval_ms = $hash->{helper}{RefreshInterval} * 1000;
 
-  # by setting this hiden iframe's src the script to uptate is loaded from fhem 
+  # by setting this hidden iframe's src the script to uptate is loaded from fhem 
   my $scriptFrame = 
     "<iframe " .
     "id='$scriptFrameIdentifier' " .
@@ -817,8 +837,9 @@ sub Map_FwFn($$$$)
   }
   else 
   {
-    if(!AttrVal($name, "group", "") && 
-      !$FW_subdir) 
+    if((!AttrVal($name, "group", "") && 
+      !$FW_subdir) ||
+      $hash->{helper}{FrameShowDetailLinkInGroup} eq "1") 
     {
       my $alias = AttrVal($name, "alias", $name);
       my $clAdd = "\" data-name=\"$name";
@@ -1077,6 +1098,16 @@ sub Map_StoreRename($$$$)
           <br>
           </code>
         </ul>
+      </li>
+      <br>
+      <li><a name="MapframeShowDetailLinkInGroup">frameShowDetailLinkInGroup</a><br>
+        If enabled show Link to map's details when map is in group.<br>
+        <br>
+        Example:<br>
+        <code>
+        attr &lt;name&gt; frameShowDetailLinkInGroup 1<br>
+        </code>
+        <br>
       </li>
       <br>
       <li><a name="MappinIcon">pinIcon</a><br>
