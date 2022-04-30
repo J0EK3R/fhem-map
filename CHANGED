@@ -1,3 +1,3 @@
 FHEM map last changes:
 2022-04-30
- - new feature ZoomIn/ZoomOut on Stop/Move of target's location
+ - Bugfix: UUID is set after Define
