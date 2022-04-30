@@ -30,7 +30,7 @@
 
 package main;
 
-my $VERSION = "1.0.1";
+my $VERSION = "1.0.3";
 
 use strict;
 use warnings;
@@ -43,6 +43,7 @@ use FHEM::Meta;
 # Forward declaration
 sub Map_Initialize($);
 sub Map_Define($$);
+sub Map_Ready($);
 sub Map_Undef($$);
 sub Map_Delete($$);
 sub Map_Rename(@);
@@ -143,15 +144,8 @@ sub Map_Define($$)
 
   my $name = $a[0];
 
-  # create unique identifier from FUUID containing only chars and numbers 
-  # this identifier is used to get unique global variable names for the scripts in the html-code 
-  my $id = $hash->{FUUID};
-  $id =~ s/[^a-zA-Z0-9,]//g;
-  
   $hash->{VERSION}                                  = $VERSION;
   $hash->{NOTIFYDEV}                                = "global,$name";
-  
-  $hash->{helper}{ID}                               = $id;
   $hash->{helper}{DEBUG}                            = "0";
   $hash->{helper}{IsDisabled}                       = "0";
   $hash->{helper}{Mode}                             = $DefaultMode;
@@ -161,6 +155,10 @@ sub Map_Define($$)
   $hash->{helper}{SourceReadingMovingName}          = "";
   $hash->{helper}{SourceReadingMovingCompareValue}  = "1";
 
+  $hash->{helper}{CounterUpdateLocation}            = 0;
+  $hash->{helper}{CounterCreateURL}                 = 0;
+  $hash->{helper}{CounterUpdateMap}                 = 0;
+  
   $hash->{helper}{MapProvider}                      = $DefaultMapProvider;
   $hash->{helper}{Icon}                             = $DefaultIcon;
   $hash->{helper}{ZoomLevelStopped}                 = $DefaultZoomLevelStopped;
@@ -175,8 +173,29 @@ sub Map_Define($$)
   $hash->{helper}{Latitude}                         = $DefaultLatitude;
   $hash->{helper}{Longitude}                        = $DefaultLongitude;
   $hash->{helper}{Moving}                           = "0";
+
+  Log3($name, 3, "Map_Define($name) - defined Map");
+
+  return undef;
+}
+
+#####################################
+# Map_Ready( $hash, $name )
+sub Map_Ready($)
+{
+  my ($hash)  = @_;
+  my $name    = $hash->{NAME};
+
+  Log3($name, 3, "Map_Ready($name) - ready");
+
+  # create unique identifier from FUUID containing only chars and numbers 
+  # this identifier is used to get unique global variable names for the scripts in the html-code 
+  my $id = $hash->{FUUID};
+  $id =~ s/[^a-zA-Z0-9,]//g;
+  $hash->{helper}{ID}                               = $id;
+
   # try to restore location, fallback is Defaults
-  $hash->{helper}{Longitude}                        = Map_Restore($hash, "MAP_Define", "Longitude", $hash->{helper}{Longitude});
+  $hash->{helper}{Longitude}                        = Map_Restore($hash, "Map_Define", "Longitude", $hash->{helper}{Longitude});
   $hash->{helper}{Latitude}                         = Map_Restore($hash, "Map_Define", "Latitude", $hash->{helper}{Latitude});
 
   # detect very first definition of an instance of the module
@@ -193,14 +212,13 @@ sub Map_Define($$)
       CommandAttr(undef, $name . " event-on-change-reading .*");
     }
   }
-  Map_Store($hash, "MAP_Define", "FirstDefine", "False");
+  Map_Store($hash, "Map_Define", "FirstDefine", "False");
 
-  readingsSingleUpdate( $hash, "state", "initialized", 1 );
-
-  Log3($name, 3, "Map_Define($name) - defined Map");
+  readingsSingleUpdate( $hash, "state", "ready", 1 );
 
   return undef;
 }
+
 
 #####################################
 # Map_Undef( $hash, $name )
@@ -551,6 +569,8 @@ sub Map_Notify($$)
     {
       # this is the initial call after fhem has startet
       Log3($name, 4, "Map_Notify($name) - INITIALIZED");
+      
+      Map_Ready($hash)
     }
 
     elsif (grep(m/^REREADCFG$/, @{$events}))
@@ -657,6 +677,10 @@ sub Map_UpdateInternals($)
     $hash->{DEBUG_SourceReadingMovingName}          = $hash->{helper}{SourceReadingMovingName};
     $hash->{DEBUG_SourceReadingMovingCompareValue}  = $hash->{helper}{SourceReadingMovingCompareValue};
 
+    $hash->{DEBUG_CounterUpdateLocation}            = $hash->{helper}{CounterUpdateLocation};
+    $hash->{DEBUG_CounterCreateURL}                 = $hash->{helper}{CounterCreateURL};
+    $hash->{DEBUG_CounterUpdateMap}                 = $hash->{helper}{CounterUpdateMap};
+
     $hash->{DEBUG_MapProvider}                      = $hash->{helper}{MapProvider};
     $hash->{DEBUG_Latitude}                         = $hash->{helper}{Latitude};
     $hash->{DEBUG_Longitude}                        = $hash->{helper}{Longitude};
@@ -689,8 +713,8 @@ sub Map_UpdateLocation($)
   my ($hash)  = @_;
   my $name    = $hash->{NAME};
 
-  Log3($name, 4, "Map_UpdateLocation($name)");
-  
+  Log3($name, 4, "Map_UpdateLocation($name) " . $hash->{helper}{CounterUpdateLocation}++);
+
   # Change latitude and longitude to get a new location if no sourcedevice is defined for debugging
   my $longitude           = $hash->{helper}{Longitude};
   my $latitude            = $hash->{helper}{Latitude};
@@ -727,7 +751,7 @@ sub Map_UpdateLocation($)
   # if mode is simulation
   elsif($hash->{helper}{Mode} eq "simulation")
   {
-    if($moving eq "1")
+    if($moving ne "0")
     {
       $longitude  += 0.001;
       $latitude   += 0.001;
@@ -786,8 +810,8 @@ sub Map_CreateURL($)
   my ($hash)  = @_;
   my $name    = $hash->{NAME};
 
-  Log3($name, 4, "Map_CreateURL($name)");
-  
+  Log3($name, 4, "Map_CreateURL($name) " . $hash->{helper}{CounterCreateURL}++);
+
   my $longitude     = $hash->{helper}{Longitude};
   my $latitude      = $hash->{helper}{Latitude};
   my $moving        = $hash->{helper}{Moving};
@@ -871,15 +895,15 @@ sub Map_FwFn($$$$)
 
   $ret .= "<div class=\"Map Map_$name\">\n";
 
-  my $scriptSrc = "$FW_ME/Map_UpdateMap?dev=$name";
-  my $url = Map_CreateURL($hash);
-  my $height = $hash->{helper}{FrameHeight};
-  my $width = $hash->{helper}{FrameWidth};
+  my $scriptSrc             = "$FW_ME/Map_UpdateMap?dev=$name";
+  my $url                   = Map_CreateURL($hash);
+  my $height                = $hash->{helper}{FrameHeight};
+  my $width                 = $hash->{helper}{FrameWidth};
   
   my $scriptFrameIdentifier = "Script_Frame_$name";
-  my $mapFrameIdentifier = "Map_Frame_$name";
+  my $mapFrameIdentifier    = "Map_Frame_$name";
 
-  my $refreshInterval_ms = $hash->{helper}{RefreshInterval} * 1000;
+  my $refreshInterval_ms    = $hash->{helper}{RefreshInterval} * 1000;
 
   # by setting this hidden iframe's src the script to uptate is loaded from fhem 
   my $scriptFrame = 
@@ -983,11 +1007,11 @@ sub Map_UpdateMap($)
 # Map_doUpdateMap($)
 sub Map_doUpdateMap($;$)
 {
-  my ($name, $noHeader) = @_;
+  my ($name) = @_;
   my $hash = $defs{$name};
   my $id = $hash->{helper}{ID};
 
-  Log3($name, 4, "Map_doUpdateMap($name)");
+  Log3($name, 4, "Map_doUpdateMap($name) " . $hash->{helper}{CounterUpdateMap}++);
 
   # update location
   Map_UpdateLocation($hash);
