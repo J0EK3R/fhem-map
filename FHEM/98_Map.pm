@@ -5,8 +5,8 @@
 #  (c) 2022 Copyright: J.K. (J0EK3R at gmx dot net)
 #  All rights reserved
 #
-#   Special thanks goes to committers:
-#   * me
+#  Special thanks goes to committers:
+#  * me
 #
 #  This script is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@
 
 package main;
 
-my $VERSION = "1.0.0";
+my $VERSION = "1.0.1";
 
 use strict;
 use warnings;
@@ -68,9 +68,10 @@ my $DefaultMode                       = "source";
 my $DefaultLatitude                   = "52.516275";
 my $DefaultLongitude                  = "13.377704";
 my $DefaultIcon                       = "4";
-my $DefaultZoom                       = "15";
+my $DefaultZoomLevelStopped           = "18";
+my $DefaultZoomLevelMoving            = "15";
 my $DefaultInterval_s                 = "5";
-my $DefaultFrameWidth                 = "100%";
+my $DefaultFrameWidth                 = "800";
 my $DefaultFrameHeight                = "800";
 my $DefaultFrameShowDetailLinkInGroup = "1";
 my $DefaultMapProvider                = "osmtools";
@@ -101,14 +102,17 @@ sub Map_Initialize($)
     "mode:$DefaultMode,simulation,off " . 
     "mapProvider:osmtools " . 
     "sourceDeviceName " . 
-    "sourceReadingNameLatitude " . 
-    "sourceReadingNameLongitude " . 
+    "sourceReadingLatitudeName " . 
+    "sourceReadingLongitudeName " . 
+    "sourceReadingMovingName " .
+    "sourceReadingMovingCompareValue " . 
     "refreshInterval " . 
     "frameWidth " . 
     "frameHeight " . 
     "frameShowDetailLinkInGroup:1,0 " . 
     "pinIcon:0,1,4,5,6,7,8,9,10,11 " . 
-    "zoom:0,1,2,3,4,5,6,7,8,9,10,11,14,15,16,17,18,19 " . 
+    "zoomStopped:0,1,2,3,4,5,6,7,8,9,10,11,14,15,16,17,18,19 " . 
+    "zoomMoving:0,1,2,3,4,5,6,7,8,9,10,11,14,15,16,17,18,19 " .
     $readingFnAttributes;
 
   foreach my $d ( sort keys %{ $modules{Map}{defptr} } )
@@ -144,31 +148,36 @@ sub Map_Define($$)
   my $id = $hash->{FUUID};
   $id =~ s/[^a-zA-Z0-9,]//g;
   
-  $hash->{VERSION}                            = $VERSION;
-  $hash->{NOTIFYDEV}                          = "global,$name";
+  $hash->{VERSION}                                  = $VERSION;
+  $hash->{NOTIFYDEV}                                = "global,$name";
   
-  $hash->{helper}{ID}                         = $id;
-  $hash->{helper}{DEBUG}                      = "0";
-  $hash->{helper}{IsDisabled}                 = "0";
-  $hash->{helper}{Mode}                       = $DefaultMode;
-  $hash->{helper}{SourceDeviceName}           = "global";
-  $hash->{helper}{SourceReadingNameLatitude}  = "latitude";
-  $hash->{helper}{SourceReadingNameLongitude} = "longitude";
+  $hash->{helper}{ID}                               = $id;
+  $hash->{helper}{DEBUG}                            = "0";
+  $hash->{helper}{IsDisabled}                       = "0";
+  $hash->{helper}{Mode}                             = $DefaultMode;
+  $hash->{helper}{SourceDeviceName}                 = "global";
+  $hash->{helper}{SourceReadingLatitudeName}        = "latitude";
+  $hash->{helper}{SourceReadingLongitudeName}       = "longitude";
+  $hash->{helper}{SourceReadingMovingName}          = "";
+  $hash->{helper}{SourceReadingMovingCompareValue}  = "1";
 
-  $hash->{helper}{MapProvider}                = $DefaultMapProvider;
-  $hash->{helper}{Icon}                       = $DefaultIcon;
-  $hash->{helper}{Zoom}                       = $DefaultZoom;
-  $hash->{helper}{FrameWidth}                 = $DefaultFrameWidth;
-  $hash->{helper}{FrameHeight}                = $DefaultFrameHeight;
-  $hash->{helper}{FrameShowDetailLinkInGroup} = $DefaultFrameShowDetailLinkInGroup;
-  $hash->{helper}{RefreshInterval}            = $DefaultInterval_s;
-  $hash->{helper}{Url}                        = "";
+  $hash->{helper}{MapProvider}                      = $DefaultMapProvider;
+  $hash->{helper}{Icon}                             = $DefaultIcon;
+  $hash->{helper}{ZoomLevelStopped}                 = $DefaultZoomLevelStopped;
+  $hash->{helper}{ZoomLevelMoving}                  = $DefaultZoomLevelMoving;
+  $hash->{helper}{ZoomLevel}                        = $hash->{helper}{ZoomLevelStopped};
+  $hash->{helper}{FrameWidth}                       = $DefaultFrameWidth;
+  $hash->{helper}{FrameHeight}                      = $DefaultFrameHeight;
+  $hash->{helper}{FrameShowDetailLinkInGroup}       = $DefaultFrameShowDetailLinkInGroup;
+  $hash->{helper}{RefreshInterval}                  = $DefaultInterval_s;
+  $hash->{helper}{Url}                              = "";
 
-  $hash->{helper}{Latitude}                   = $DefaultLatitude;
-  $hash->{helper}{Longitude}                  = $DefaultLongitude;
+  $hash->{helper}{Latitude}                         = $DefaultLatitude;
+  $hash->{helper}{Longitude}                        = $DefaultLongitude;
+  $hash->{helper}{Moving}                           = "0";
   # try to restore location, fallback is Defaults
-  $hash->{helper}{Longitude}                  = Map_Restore($hash, "MAP_Define", "Longitude", $hash->{helper}{Longitude});
-  $hash->{helper}{Latitude}                   = Map_Restore($hash, "Map_Define", "Latitude", $hash->{helper}{Latitude});
+  $hash->{helper}{Longitude}                        = Map_Restore($hash, "MAP_Define", "Longitude", $hash->{helper}{Longitude});
+  $hash->{helper}{Latitude}                         = Map_Restore($hash, "Map_Define", "Latitude", $hash->{helper}{Latitude});
 
   # detect very first definition of an instance of the module
   if(Map_Restore( $hash, "MAP_Define", "FirstDefine", $id) eq $id)
@@ -366,18 +375,34 @@ sub Map_Attr(@)
     Map_UpdateInternals($hash);
   }
   
-  # Attribute "zoom"
-  elsif (lc $attrName eq lc "zoom" )
+  # Attribute "zoomStopped"
+  elsif (lc $attrName eq lc "zoomStopped" )
   {
     if ( $cmd eq "set")
     {
-      $hash->{helper}{Zoom} = "$attrVal";
+      $hash->{helper}{ZoomLevelStopped} = "$attrVal";
     } 
     elsif ( $cmd eq "del" )
     {
-      $hash->{helper}{Zoom} = $DefaultZoom;
+      $hash->{helper}{ZoomLevelStopped} = $DefaultZoomLevelStopped;
     }
-    Log3($name, 4, "Map_Attr($name) - zoom $hash->{helper}{Zoom}");
+    Log3($name, 4, "Map_Attr($name) - zoom $hash->{helper}{ZoomLevelStopped}");
+
+    Map_UpdateInternals($hash);
+  }
+  
+  # Attribute "zoomMoving"
+  elsif (lc $attrName eq lc "zoomMoving" )
+  {
+    if ( $cmd eq "set")
+    {
+      $hash->{helper}{ZoomLevelMoving} = "$attrVal";
+    } 
+    elsif ( $cmd eq "del" )
+    {
+      $hash->{helper}{ZoomLevelMoving} = $DefaultZoomLevelMoving;
+    }
+    Log3($name, 4, "Map_Attr($name) - zoom $hash->{helper}{ZoomLevelMoving}");
 
     Map_UpdateInternals($hash);
   }
@@ -433,34 +458,66 @@ sub Map_Attr(@)
     Map_UpdateInternals($hash);
   }
 
-  # Attribute "sourceReadingNameLatitude"
-  elsif(lc $attrName eq lc "sourceReadingNameLatitude")
+  # Attribute "sourceReadingLatitudeName"
+  elsif(lc $attrName eq lc "sourceReadingLatitudeName")
   {
     if($cmd eq "set")
     {
-      $hash->{helper}{SourceReadingNameLatitude} = "$attrVal";
+      $hash->{helper}{SourceReadingLatitudeName} = "$attrVal";
     } 
     else
     {
-      $hash->{helper}{SourceReadingNameLatitude} = "";
+      $hash->{helper}{SourceReadingLatitudeName} = "";
     }
-    Log3($name, 4, "Map_Attr($name) - set sourceReadingNameLatitude: $hash->{helper}{SourceReadingNameLatitude}");
+    Log3($name, 4, "Map_Attr($name) - set sourceReadingLatitudeName: $hash->{helper}{SourceReadingLatitudeName}");
 
     Map_UpdateInternals($hash);
   }
 
-  # Attribute "sourceReadingNameLongitude"
-  elsif(lc $attrName eq lc "sourceReadingNameLongitude")
+  # Attribute "sourceReadingLongitudeName"
+  elsif(lc $attrName eq lc "sourceReadingLongitudeName")
   {
     if($cmd eq "set")
     {
-      $hash->{helper}{SourceReadingNameLongitude} = "$attrVal";
+      $hash->{helper}{SourceReadingLongitudeName} = "$attrVal";
     } 
     else
     {
-      $hash->{helper}{SourceReadingNameLongitude} = "";
+      $hash->{helper}{SourceReadingLongitudeName} = "";
     }
-    Log3($name, 4, "Map_Attr($name) - set sourceReadingNameLongitude: $hash->{helper}{SourceReadingNameLongitude}");
+    Log3($name, 4, "Map_Attr($name) - set sourceReadingLongitudeName: $hash->{helper}{SourceReadingLongitudeName}");
+
+    Map_UpdateInternals($hash);
+  }
+
+  # Attribute "sourceReadingMovingName"
+  elsif(lc $attrName eq lc "sourceReadingMovingName")
+  {
+    if($cmd eq "set")
+    {
+      $hash->{helper}{SourceReadingMovingName} = "$attrVal";
+    } 
+    else
+    {
+      $hash->{helper}{SourceReadingMovingName} = "";
+    }
+    Log3($name, 4, "Map_Attr($name) - set sourceReadingMovingName: $hash->{helper}{SourceReadingMovingName}");
+
+    Map_UpdateInternals($hash);
+  }
+
+  # Attribute "sourceReadingMovingCompareValue"
+  elsif(lc $attrName eq lc "sourceReadingMovingCompareValue")
+  {
+    if($cmd eq "set")
+    {
+      $hash->{helper}{SourceReadingMovingCompareValue} = "$attrVal";
+    } 
+    else
+    {
+      $hash->{helper}{SourceReadingMovingCompareValue} = "";
+    }
+    Log3($name, 4, "Map_Attr($name) - set sourceReadingMovingCompareValue: $hash->{helper}{SourceReadingMovingCompareValue}");
 
     Map_UpdateInternals($hash);
   }
@@ -556,6 +613,13 @@ sub Map_Set($@)
     Map_UpdateLocation($hash);
     return;
   }
+  ### Command "moving"
+  elsif( lc $cmd eq lc "moving" )
+  {
+    $hash->{helper}{Moving} = join( " ", @args );
+    Map_UpdateLocation($hash);
+    return;
+  }
   ### create Command list
   else
   {
@@ -563,6 +627,7 @@ sub Map_Set($@)
 
     $list .= "latitude ";
     $list .= "longitude ";
+    $list .= "moving:0,1 ";
 
     $list .= "clearreadings:$ReadingsDebugMarker.*,.* "
       if($hash->{helper}{DEBUG} eq "1");
@@ -587,14 +652,19 @@ sub Map_UpdateInternals($)
     $hash->{DEBUG_ID}                               = $hash->{helper}{ID};
     $hash->{DEBUG_Mode}                             = $hash->{helper}{Mode};
     $hash->{DEBUG_SourceDeviceName}                 = $hash->{helper}{SourceDeviceName};
-    $hash->{DEBUG_SourceSourceReadingNameLatitude}  = $hash->{helper}{SourceReadingNameLatitude};
-    $hash->{DEBUG_SourceReadingNameLongitude}       = $hash->{helper}{SourceReadingNameLongitude};
+    $hash->{DEBUG_SourcesourceReadingLatitudeName}  = $hash->{helper}{SourceReadingLatitudeName};
+    $hash->{DEBUG_SourceReadingLongitudeName}       = $hash->{helper}{SourceReadingLongitudeName};
+    $hash->{DEBUG_SourceReadingMovingName}          = $hash->{helper}{SourceReadingMovingName};
+    $hash->{DEBUG_SourceReadingMovingCompareValue}  = $hash->{helper}{SourceReadingMovingCompareValue};
 
     $hash->{DEBUG_MapProvider}                      = $hash->{helper}{MapProvider};
     $hash->{DEBUG_Latitude}                         = $hash->{helper}{Latitude};
     $hash->{DEBUG_Longitude}                        = $hash->{helper}{Longitude};
+    $hash->{DEBUG_Moving}                           = $hash->{helper}{Moving};
     $hash->{DEBUG_Icon}                             = $hash->{helper}{Icon};
-    $hash->{DEBUG_Zoom}                             = $hash->{helper}{Zoom};
+    $hash->{DEBUG_ZoomLevelStopped}                 = $hash->{helper}{ZoomLevelStopped};
+    $hash->{DEBUG_ZoomLevelMoving}                  = $hash->{helper}{ZoomLevelMoving};
+    $hash->{DEBUG_ZoomLevel}                        = $hash->{helper}{ZoomLevel};
     $hash->{DEBUG_FrameWidth}                       = $hash->{helper}{FrameWidth};
     $hash->{DEBUG_FrameHeight}                      = $hash->{helper}{FrameHeight};
     $hash->{DEBUG_FrameShowDetailLinkInGroup}       = $hash->{helper}{FrameShowDetailLinkInGroup};
@@ -622,12 +692,21 @@ sub Map_UpdateLocation($)
   Log3($name, 4, "Map_UpdateLocation($name)");
   
   # Change latitude and longitude to get a new location if no sourcedevice is defined for debugging
-  my $longitude         = $hash->{helper}{Longitude};
-  my $latitude          = $hash->{helper}{Latitude};
-  my $sourceDeviceName  = $hash->{helper}{SourceDeviceName};
+  my $longitude           = $hash->{helper}{Longitude};
+  my $latitude            = $hash->{helper}{Latitude};
+  my $moving              = $hash->{helper}{Moving};
+  my $sourceDeviceName    = $hash->{helper}{SourceDeviceName};
+  my $zoomLevelStopped    = $hash->{helper}{ZoomLevelStopped};
+  my $zoomLevelMoving     = $hash->{helper}{ZoomLevelMoving};
+  my $zoomLevel           = $hash->{helper}{ZoomLevel};
+
+  my $zoomDirection     = $zoomLevelStopped < $zoomLevelMoving ? 1 : -1;
+  my $zoomMin           = $zoomLevelStopped < $zoomLevelMoving ? $zoomLevelStopped : $zoomLevelMoving;
+  my $zoomMax           = $zoomLevelStopped < $zoomLevelMoving ? $zoomLevelMoving : $zoomLevelStopped;
   
   my $savedLongitude    = $longitude;
   my $savedLatitude     = $latitude;
+  my $savedMoving       = $moving;
   
   # mode is "source" 
   if($hash->{helper}{Mode} eq $DefaultMode)
@@ -635,29 +714,60 @@ sub Map_UpdateLocation($)
     # get readings from sourcedevice
     if(defined($defs{$sourceDeviceName}))
     {
-      $longitude  = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLongitude}, $longitude);
-      $latitude   = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingNameLatitude}, $latitude);
+      $longitude  = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingLongitudeName}, $longitude);
+      $latitude   = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingLatitudeName}, $latitude);
+      
+      if($hash->{helper}{SourceReadingMovingName} ne "")
+      {
+        my $movingValue = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingMovingName}, "");
+        $moving = $movingValue eq $hash->{helper}{SourceReadingMovingCompareValue} ? "1" : "0"; 
+      }
     }
   }
   # if mode is simulation
   elsif($hash->{helper}{Mode} eq "simulation")
   {
-    $longitude  += 0.001;
-    $latitude   += 0.001;
+    if($moving eq "1")
+    {
+      $longitude  += 0.001;
+      $latitude   += 0.001;
+    }
   }
   # mode is "off"
   else
   {
   }
 
+  # Is location moving? Then ZoomIn:
+  if($moving ne "0")
+  {
+    $zoomLevel += $zoomDirection;
+  }
+  else
+  {
+    $zoomLevel -= $zoomDirection;
+  }
+
+  # Ensure zoomlevel is in bounds
+  if($zoomLevel < $zoomMin)
+  {
+    $zoomLevel = $zoomMin; 
+  }
+  elsif($zoomLevel > $zoomMax)
+  {
+    $zoomLevel = $zoomMax; 
+  }
+  
+  $hash->{helper}{ZoomLevel}  = $zoomLevel;
+  $hash->{helper}{Latitude}   = $latitude;
+  $hash->{helper}{Longitude}  = $longitude;
+  $hash->{helper}{Moving}     = $moving;
+  Map_UpdateInternals($hash);
+
   # position has changed?  
   if($savedLatitude ne $latitude or
     $savedLongitude ne $longitude)
   {
-    $hash->{helper}{Latitude}   = $latitude;
-    $hash->{helper}{Longitude}  = $longitude;
-    Map_UpdateInternals($hash);
-
     Map_Store($hash, "Map_UpdateLocation", "Latitude", $hash->{helper}{Latitude});
     Map_Store($hash, "Map_UpdateLocation", "Longitude", $hash->{helper}{Longitude});
   }
@@ -665,6 +775,7 @@ sub Map_UpdateLocation($)
   readingsBeginUpdate($hash);
   readingsBulkUpdate($hash, "latitude", "$latitude");
   readingsBulkUpdate($hash, "longitude", "$longitude");
+  readingsBulkUpdate($hash, "moving", "$moving");
   readingsEndUpdate($hash, 1);
 }
 
@@ -677,43 +788,45 @@ sub Map_CreateURL($)
 
   Log3($name, 4, "Map_CreateURL($name)");
   
-  my $longitude = $hash->{helper}{Longitude};
-  my $latitude  = $hash->{helper}{Latitude};
+  my $longitude     = $hash->{helper}{Longitude};
+  my $latitude      = $hash->{helper}{Latitude};
+  my $moving        = $hash->{helper}{Moving};
+  my $zoomLevel     = $hash->{helper}{ZoomLevel};
 
-   my $url = ""; 
+  my $url = ""; 
 
-   if($hash->{helper}{MapProvider} eq "googlemapsXXX")
-   {
+  if($hash->{helper}{MapProvider} eq "googlemapsXXX")
+  {
 #     $url = "https://maps.google.de/maps/search/?api=1" .
 #       "&query=$latitude,$longitude";
 #     $url = "https://maps.google.de/maps/embed/v1/place/?api=1" .
 #       "&map_action=map" .
-#       "&zoom=$hash->{helper}{Zoom}" .
+#       "&zoom=$hash->{helper}{ZoomLevelMoving}" .
 #       "&basemap=terrain" .
 #       "&center=$latitude%2$longitude" .
 #       "";
-   }
-   elsif($hash->{helper}{MapProvider} eq "openstreetmap")
-   {
+  }
+  elsif($hash->{helper}{MapProvider} eq "openstreetmap")
+  {
 #     $url = "http://www.openstreetmap.org/?" .
 #       "mlat=$latitude" .
 #       "&mlon=$longitude" .
-#       "#map=$hash->{helper}{Zoom}/$latitude/$longitude" .
+#       "#map=$hash->{helper}{ZoomLevelMoving}/$latitude/$longitude" .
 #       "";
-   }
-   # default: ($hash->{helper}{MapProvider} eq "osmtools")
-   else 
-   {
-     $url = "http://m.osmtools.de/?" .
-       "zoom=$hash->{helper}{Zoom}" . 
-       "&lon=$longitude" . 
-       "&mlon=$longitude" .
-       "&lat=$latitude" . 
-       "&mlat=$latitude" .
-       "&icon=$hash->{helper}{Icon}" .
-       "&iframe=1" .
-       "";
-   }
+  }
+  # default: ($hash->{helper}{MapProvider} eq "osmtools")
+  else 
+  {
+    $url = "http://m.osmtools.de/?" .
+      "zoom=$zoomLevel" . 
+      "&lon=$longitude" . 
+      "&mlon=$longitude" .
+      "&lat=$latitude" . 
+      "&mlat=$latitude" .
+      "&icon=$hash->{helper}{Icon}" .
+      "&iframe=1" .
+      "";
+  }
 
   $hash->{helper}{Url} = $url;
   Map_UpdateInternals($hash);
@@ -1035,6 +1148,10 @@ sub Map_StoreRename($$$$)
         Set value of the reading <b>latitude</b> of the location.
       </li>
       <br>
+      <li><a name="Mapmoving">moving</a><br>
+        Set value of the reading <b>moving</b> to 0 or 1.
+      </li>
+      <br>
       <li><a name="Mapclearreadings">clearreadings</a><br>
         Toolfunction: clear debug/all readings of the module.
       </li>
@@ -1092,12 +1209,21 @@ sub Map_StoreRename($$$$)
         Name of a FHEM device wich provides the location.<br>
       </li>
       <br>
-      <li><a name="MapsourceReadingNameLatitude">sourceReadingNameLatitude</a><br>
+      <li><a name="MapsourceReadingLatitudeName">sourceReadingLatitudeName</a><br>
         Name of the sourcedevice's reading wich provides the latitude of the location.<br>
       </li>
       <br>
-      <li><a name="MapsourceReadingNameLongitude">sourceReadingNameLongitude</a><br>
+      <li><a name="MapsourceReadingLongitudeName">sourceReadingLongitudeName</a><br>
         Name of the sourcedevice's reading wich provides the longitude of the location.<br>
+      </li>
+      <br>
+      <li><a name="MapsourceReadingMovingName">sourceReadingMovingName</a><br>
+        Name of the sourcedevice's reading wich provides the information if location is moving.<br>
+        I.E. the ignition of a vehicle in on.<br>
+      </li>
+      <br>
+      <li><a name="MapsourceReadingMovingCompareValue">sourceReadingMovingCompareValue</a><br>
+        Value to compare the sourcedevice's reading wich provides the information if location is moving .<br>
       </li>
       <br>
       <li><a name="MapframeWidth">frameWidth</a><br>
@@ -1150,7 +1276,11 @@ sub Map_StoreRename($$$$)
         Number of the icon wich marks the location in the shown map.<br>
       </li>
       <br>
-      <li><a name="Mapzoom">zoom</a><br>
+      <li><a name="MapzoomMoving">zoomMoving</a><br>
+        Zoom level 0 - 19 of the map.<br>
+      </li>
+      <br>
+      <li><a name="MapzoomStopped">zoomStopped</a><br>
         Zoom level 0 - 19 of the map.<br>
       </li>
     </ul><br>
