@@ -30,7 +30,7 @@
 
 package main;
 
-my $VERSION = "1.0.3";
+my $VERSION = "1.0.4";
 
 use strict;
 use warnings;
@@ -576,6 +576,8 @@ sub Map_Notify($$)
     elsif (grep(m/^REREADCFG$/, @{$events}))
     {
       Log3($name, 4, "Map_Notify($name) - REREADCFG");
+
+      Map_Ready($hash)
     }
 
     elsif (grep(m/^DEFINED.$name$/, @{$events}) )
@@ -1042,7 +1044,7 @@ sub Map_Store($$$$)
 {
   my ($hash, $sender, $key, $value) = @_;
   my $type = $hash->{TYPE};
-  my $name = $hash->{FUUID};
+  my $name = $hash->{NAME}; #$hash->{FUUID};
 
   my $deviceKey = $type . "_" . $name . "_" . $key;
 
@@ -1063,7 +1065,7 @@ sub Map_Restore($$$$)
 {
   my ($hash, $sender, $key, $defaultvalue) = @_;
   my $type = $hash->{TYPE};
-  my $name = $hash->{FUUID};
+  my $name = $hash->{NAME}; #$hash->{FUUID};
 
   my $deviceKey = $type . "_" . $name . "_" . $key;
 
@@ -1090,7 +1092,7 @@ sub Map_StoreRename($$$$)
 {
   my ($hash, $sender, $old_name, $key) = @_;
   my $type = $hash->{TYPE};
-  my $new_name = $hash->{FUUID};
+  my $new_name = $hash->{NAME}; # $hash->{FUUID};
 
   my $old_deviceKey = $type . "_" . $old_name . "_" . $key;
   my $new_deviceKey = $type . "_" . $new_name . "_" . $key;
