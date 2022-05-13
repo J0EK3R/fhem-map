@@ -30,7 +30,7 @@
 
 package main;
 
-my $VERSION = "1.0.5";
+my $VERSION = "1.0.6";
 
 use strict;
 use warnings;
@@ -101,7 +101,7 @@ sub Map_Initialize($)
   $hash->{FW_atPageEnd} = 1;
   
   $data{FWEXT}{"/Map_UpdateMap"}{FUNC}      = "Map_UpdateMap";
-  $data{FWEXT}{"/Map_UpdateMap"}{FORKABLE}  = 1;
+#  $data{FWEXT}{"/Map_UpdateMap"}{FORKABLE}  = 1;
 
   $hash->{AttrList} = 
     "debug:0,1 " . 
@@ -720,7 +720,8 @@ sub Map_UpdateLocation($)
   my ($hash)  = @_;
   my $name    = $hash->{NAME};
 
-  Log3($name, 4, "Map_UpdateLocation($name) " . $hash->{helper}{CounterUpdateLocation}++);
+  $hash->{helper}{CounterUpdateLocation}++;
+  Log3($name, 4, "Map_UpdateLocation($name) " . $hash->{helper}{CounterUpdateLocation});
 
   # Change latitude and longitude to get a new location if no sourcedevice is defined for debugging
   my $longitude           = $hash->{helper}{Longitude};
@@ -817,7 +818,8 @@ sub Map_CreateURL($)
   my ($hash)  = @_;
   my $name    = $hash->{NAME};
 
-  Log3($name, 4, "Map_CreateURL($name) " . $hash->{helper}{CounterCreateURL}++);
+  $hash->{helper}{CounterCreateURL}++;
+  Log3($name, 4, "Map_CreateURL($name) " . $hash->{helper}{CounterCreateURL});
 
   my $longitude     = $hash->{helper}{Longitude};
   my $latitude      = $hash->{helper}{Latitude};
@@ -1025,7 +1027,8 @@ sub Map_doUpdateMap($)
   my $hash = $defs{$name};
   my $id = $hash->{helper}{ID};
 
-  Log3($name, 4, "Map_doUpdateMap($name) " . $hash->{helper}{CounterUpdateMap}++);
+  $hash->{helper}{CounterUpdateMap}++;
+  Log3($name, 4, "Map_doUpdateMap($name) " . $hash->{helper}{CounterUpdateMap});
 
   # update location
   Map_UpdateLocation($hash);
