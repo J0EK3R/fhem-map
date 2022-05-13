@@ -30,10 +30,11 @@
 
 package main;
 
-my $VERSION = "1.0.4";
+my $VERSION = "1.0.5";
 
 use strict;
 use warnings;
+use Math::Trig;
 
 my $missingModul = "";
 
@@ -56,13 +57,17 @@ sub Map_UpdateLocation($);
 sub Map_CreateURL($);
 sub Map_FwFn($$$$);
 sub Map_UpdateMap($);
-sub Map_doUpdateMap($;$);
+sub Map_doUpdateMap($);
 
 sub Map_Store($$$$);
 sub Map_Restore($$$$);
 sub Map_StoreRename($$$$);
 
-my $ReadingsDebugMarker               = "Dbg";
+sub Map_getTileNumber($$$);
+sub Map_getLonLat($$$);
+sub Map_LonLat_to_bbox($$$);
+
+my $DebugMarker               = "Dbg";
 
 # definition of defaults
 my $DefaultMode                       = "source";
@@ -101,7 +106,7 @@ sub Map_Initialize($)
   $hash->{AttrList} = 
     "debug:0,1 " . 
     "mode:$DefaultMode,simulation,off " . 
-    "mapProvider:osmtools " . 
+    "mapProvider:osmtools,openstreetmap " . 
     "sourceDeviceName " . 
     "sourceReadingLatitudeName " . 
     "sourceReadingLongitudeName " . 
@@ -651,7 +656,7 @@ sub Map_Set($@)
     $list .= "longitude ";
     $list .= "moving:0,1 ";
 
-    $list .= "clearreadings:$ReadingsDebugMarker.*,.* "
+    $list .= "clearreadings:$DebugMarker.*,.* "
       if($hash->{helper}{DEBUG} eq "1");
 
     return "Unknown argument $cmd, choose one of $list";
@@ -669,38 +674,38 @@ sub Map_UpdateInternals($)
   
   if($hash->{helper}{DEBUG} eq "1")
   {
-    $hash->{DEBUG_IsDisabled}                       = $hash->{helper}{IsDisabled};
+    $hash->{$DebugMarker . "_IsDisabled"}                       = $hash->{helper}{IsDisabled};
 
-    $hash->{DEBUG_ID}                               = $hash->{helper}{ID};
-    $hash->{DEBUG_Mode}                             = $hash->{helper}{Mode};
-    $hash->{DEBUG_SourceDeviceName}                 = $hash->{helper}{SourceDeviceName};
-    $hash->{DEBUG_SourcesourceReadingLatitudeName}  = $hash->{helper}{SourceReadingLatitudeName};
-    $hash->{DEBUG_SourceReadingLongitudeName}       = $hash->{helper}{SourceReadingLongitudeName};
-    $hash->{DEBUG_SourceReadingMovingName}          = $hash->{helper}{SourceReadingMovingName};
-    $hash->{DEBUG_SourceReadingMovingCompareValue}  = $hash->{helper}{SourceReadingMovingCompareValue};
+    $hash->{$DebugMarker . "_ID"}                               = $hash->{helper}{ID};
+    $hash->{$DebugMarker . "_Mode"}                             = $hash->{helper}{Mode};
+    $hash->{$DebugMarker . "_SourceDeviceName"}                 = $hash->{helper}{SourceDeviceName};
+    $hash->{$DebugMarker . "_SourcesourceReadingLatitudeName"}  = $hash->{helper}{SourceReadingLatitudeName};
+    $hash->{$DebugMarker . "_SourceReadingLongitudeName"}       = $hash->{helper}{SourceReadingLongitudeName};
+    $hash->{$DebugMarker . "_SourceReadingMovingName"}          = $hash->{helper}{SourceReadingMovingName};
+    $hash->{$DebugMarker . "_SourceReadingMovingCompareValue"}  = $hash->{helper}{SourceReadingMovingCompareValue};
 
-    $hash->{DEBUG_CounterUpdateLocation}            = $hash->{helper}{CounterUpdateLocation};
-    $hash->{DEBUG_CounterCreateURL}                 = $hash->{helper}{CounterCreateURL};
-    $hash->{DEBUG_CounterUpdateMap}                 = $hash->{helper}{CounterUpdateMap};
+    $hash->{$DebugMarker . "_CounterUpdateLocation"}            = $hash->{helper}{CounterUpdateLocation};
+    $hash->{$DebugMarker . "_CounterCreateURL"}                 = $hash->{helper}{CounterCreateURL};
+    $hash->{$DebugMarker . "_CounterUpdateMap"}                 = $hash->{helper}{CounterUpdateMap};
 
-    $hash->{DEBUG_MapProvider}                      = $hash->{helper}{MapProvider};
-    $hash->{DEBUG_Latitude}                         = $hash->{helper}{Latitude};
-    $hash->{DEBUG_Longitude}                        = $hash->{helper}{Longitude};
-    $hash->{DEBUG_Moving}                           = $hash->{helper}{Moving};
-    $hash->{DEBUG_Icon}                             = $hash->{helper}{Icon};
-    $hash->{DEBUG_ZoomLevelStopped}                 = $hash->{helper}{ZoomLevelStopped};
-    $hash->{DEBUG_ZoomLevelMoving}                  = $hash->{helper}{ZoomLevelMoving};
-    $hash->{DEBUG_ZoomLevel}                        = $hash->{helper}{ZoomLevel};
-    $hash->{DEBUG_FrameWidth}                       = $hash->{helper}{FrameWidth};
-    $hash->{DEBUG_FrameHeight}                      = $hash->{helper}{FrameHeight};
-    $hash->{DEBUG_FrameShowDetailLinkInGroup}       = $hash->{helper}{FrameShowDetailLinkInGroup};
-    $hash->{DEBUG_RefreshInterval}                  = $hash->{helper}{RefreshInterval};
-    $hash->{DEBUG_Url}                              = $hash->{helper}{Url};
+    $hash->{$DebugMarker . "_MapProvider"}                      = $hash->{helper}{MapProvider};
+    $hash->{$DebugMarker . "_Latitude"}                         = $hash->{helper}{Latitude};
+    $hash->{$DebugMarker . "_Longitude"}                        = $hash->{helper}{Longitude};
+    $hash->{$DebugMarker . "_Moving"}                           = $hash->{helper}{Moving};
+    $hash->{$DebugMarker . "_Icon"}                             = $hash->{helper}{Icon};
+    $hash->{$DebugMarker . "_ZoomLevelStopped"}                 = $hash->{helper}{ZoomLevelStopped};
+    $hash->{$DebugMarker . "_ZoomLevelMoving"}                  = $hash->{helper}{ZoomLevelMoving};
+    $hash->{$DebugMarker . "_ZoomLevel"}                        = $hash->{helper}{ZoomLevel};
+    $hash->{$DebugMarker . "_FrameWidth"}                       = $hash->{helper}{FrameWidth};
+    $hash->{$DebugMarker . "_FrameHeight"}                      = $hash->{helper}{FrameHeight};
+    $hash->{$DebugMarker . "_FrameShowDetailLinkInGroup"}       = $hash->{helper}{FrameShowDetailLinkInGroup};
+    $hash->{$DebugMarker . "_RefreshInterval"}                  = $hash->{helper}{RefreshInterval};
+    $hash->{$DebugMarker . "_Url"}                              = $hash->{helper}{Url};
   }
   else
   {
     # delete all keys starting with "DEBUG_"
-    my @matching_keys =  grep /DEBUG_/, keys %$hash;
+    my @matching_keys =  grep /$DebugMarker/, keys %$hash;
     foreach (@matching_keys)
     {
       delete $hash->{$_};
@@ -834,11 +839,18 @@ sub Map_CreateURL($)
   }
   elsif($hash->{helper}{MapProvider} eq "openstreetmap")
   {
-#     $url = "http://www.openstreetmap.org/?" .
+    my ($longitudeStart, $latitudeStart, $longitudeEnd, $latitudeEnd) = Map_LonLat_to_bbox($longitude, $latitude, $zoomLevel);
+    #my $bbox = Map_LonLat_to_bbox($longitude, $latitude, $zoomLevel);
+    
+    $url = "https://www.openstreetmap.org/export/embed.html?" .
+#      "bbox=$longitudeStart%2C$latitudeStart%2C$longitudeEnd%2C$latitudeEnd" .
+      "bbox=$longitudeStart,$latitudeStart,$longitudeEnd,$latitudeEnd" .
+      "&layer=mapnik" .
+      "&marker=$latitude%2C$longitude" .
 #       "mlat=$latitude" .
 #       "&mlon=$longitude" .
 #       "#map=$hash->{helper}{ZoomLevelMoving}/$latitude/$longitude" .
-#       "";
+       "";
   }
   # default: ($hash->{helper}{MapProvider} eq "osmtools")
   else 
@@ -1007,7 +1019,7 @@ sub Map_UpdateMap($)
 
 ######################
 # Map_doUpdateMap($)
-sub Map_doUpdateMap($;$)
+sub Map_doUpdateMap($)
 {
   my ($name) = @_;
   my $hash = $defs{$name};
@@ -1121,6 +1133,54 @@ sub Map_StoreRename($$$$)
   # delete old key
   setKeyValue($old_deviceKey, undef);
 }
+
+sub Map_getTileNumber($$$)
+{
+  my ($lon, $lat, $zoom) = @_;
+  
+  my $xtile = int( ($lon+180)/360 * 2**$zoom ) ;
+  my $ytile = int( (1 - log(tan(deg2rad($lat)) + sec(deg2rad($lat)))/pi)/2 * 2**$zoom ) ;
+  return ($xtile, $ytile);
+}
+
+sub Map_getLonLat($$$)
+{
+  my ($xtile, $ytile, $zoom) = @_;
+  my $n = 2 ** $zoom;
+  my $lon_deg = $xtile / $n * 360.0 - 180.0;
+  my $lat_deg = rad2deg(atan(sinh(pi * (1 - 2 * $ytile / $n))));
+  return ($lon_deg, $lat_deg);
+}
+
+# convert from permalink OSM format like:
+# http://www.openstreetmap.org/?lat=43.731049999999996&lon=15.79375&zoom=13&layers=M
+# to OSM "Export" iframe embedded bbox format like:
+# http://www.openstreetmap.org/export/embed.html?bbox=15.7444,43.708,15.8431,43.7541&layer=mapnik
+sub Map_LonLat_to_bbox($$$)
+{
+  my ($lon, $lat, $zoom) = @_;
+  
+#  my $width = 425; 
+#  my $height = 350;  # note: must modify this to match your embed map width/height in pixels
+  my $width = 1024; 
+  my $height = 1024;  # note: must modify this to match your embed map width/height in pixels
+  my $tile_size = 256;
+  
+  my ($xtile, $ytile) = Map_getTileNumber($lon, $lat, $zoom);
+  
+  my $xtile_s = ($xtile * $tile_size - $width/2) / $tile_size;
+  my $ytile_s = ($ytile * $tile_size - $height/2) / $tile_size;
+  my $xtile_e = ($xtile * $tile_size + $width/2) / $tile_size;
+  my $ytile_e = ($ytile * $tile_size + $height/2) / $tile_size;
+  
+  my ($lon_s, $lat_s) = Map_getLonLat($xtile_s, $ytile_s, $zoom);
+  my ($lon_e, $lat_e) = Map_getLonLat($xtile_e, $ytile_e, $zoom);
+  
+#  my $bbox = "$lon_s,$lat_s,$lon_e,$lat_e";
+#  return $bbox;
+  return ($lon_s, $lat_s, $lon_e, $lat_e);
+}
+
 
 =pod
 =item device
