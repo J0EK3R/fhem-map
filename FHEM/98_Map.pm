@@ -30,7 +30,7 @@
 
 package main;
 
-my $VERSION = "1.0.6";
+my $VERSION = "1.0.7";
 
 use strict;
 use warnings;
@@ -952,7 +952,7 @@ sub Map_FwFn($$$$)
       # global variables
       "window.scriptFrame_" . $id . " = document.getElementById('$scriptFrameIdentifier'); " .
       "window.mapFrame_" . $id . " = document.getElementById('$mapFrameIdentifier'); " .
-      "window.url_" . $id . " = '$url'; " .
+      "window.url_" . $id . " = '" . $url . "'; " .
       "window.refreshInterval_ms_" . $id . " = $refreshInterval_ms; " .
       "window.frameheight_" . $id . " = '$height'; " .
       "window.framewidth_" . $id . " = '$width'; " .
