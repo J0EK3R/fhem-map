@@ -67,7 +67,7 @@ sub Map_getTileNumber($$$);
 sub Map_getLonLat($$$);
 sub Map_LonLat_to_bbox($$$);
 
-my $DebugMarker               = "Dbg";
+my $DebugMarker                       = "Dbg";
 
 # definition of defaults
 my $DefaultMode                       = "source";
