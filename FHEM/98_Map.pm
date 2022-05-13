@@ -30,7 +30,7 @@
 
 package main;
 
-my $VERSION = "1.0.8";
+my $VERSION = "1.0.9";
 
 use strict;
 use warnings;
@@ -142,7 +142,7 @@ sub Map_Define($$)
     unless ( FHEM::Meta::SetInternals($hash) );
 
   return "wrong number of parameters: define <NAME> Map"
-    if ( @a != 2 );
+    if (@a != 2 );
 
   return "Cannot define Map. Perl modul " . ${missingModul} . " is missing."
     if ($missingModul);
@@ -204,7 +204,7 @@ sub Map_Ready($)
   $hash->{helper}{Latitude}                         = Map_Restore($hash, "Map_Define", "Latitude", $hash->{helper}{Latitude});
 
   # detect very first definition of an instance of the module
-  if(Map_Restore( $hash, "MAP_Define", "FirstDefine", $id) eq $id)
+  if (Map_Restore( $hash, "MAP_Define", "FirstDefine", $id) eq $id)
   {
     # set default Attributes
     if (AttrVal($name, "room", "none" ) eq "none")
@@ -280,7 +280,7 @@ sub Map_Attr(@)
   # Attribute "disable"
   if (lc $attrName eq lc "disable" )
   {
-    if ( $cmd eq "set" and 
+    if ($cmd eq "set" and 
       $attrVal eq "1" )
     {
       $hash->{helper}{IsDisabled} = "1";
@@ -305,11 +305,11 @@ sub Map_Attr(@)
   # Attribute "debug"
   elsif (lc $attrName eq lc "debug" )
   {
-    if ( $cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{DEBUG} = "$attrVal";
     } 
-    elsif ( $cmd eq "del" )
+    elsif ($cmd eq "del" )
     {
       $hash->{helper}{DEBUG} = "0";
     }
@@ -321,11 +321,11 @@ sub Map_Attr(@)
   # Attribute "mode"
   elsif (lc $attrName eq lc "mode" )
   {
-    if ( $cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{Mode} = "$attrVal";
     } 
-    elsif ( $cmd eq "del" )
+    elsif ($cmd eq "del" )
     {
       $hash->{helper}{Mode} = $DefaultMode;
     }
@@ -337,11 +337,11 @@ sub Map_Attr(@)
   # Attribute "pinIcon"
   elsif (lc $attrName eq lc "pinIcon" )
   {
-    if ( $cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{Icon} = "$attrVal";
     } 
-    elsif ( $cmd eq "del" )
+    elsif ($cmd eq "del" )
     {
       $hash->{helper}{Icon} = $DefaultIcon;
     }
@@ -353,11 +353,11 @@ sub Map_Attr(@)
   # Attribute "frameWidth"
   elsif (lc $attrName eq lc "frameWidth" )
   {
-    if ( $cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{FrameWidth} = "$attrVal";
     } 
-    elsif ( $cmd eq "del" )
+    elsif ($cmd eq "del" )
     {
       $hash->{helper}{FrameWidth} = $DefaultFrameWidth;
     }
@@ -369,11 +369,11 @@ sub Map_Attr(@)
   # Attribute "frameHeight"
   elsif (lc $attrName eq lc "frameHeight" )
   {
-    if ( $cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{FrameHeight} = "$attrVal";
     } 
-    elsif ( $cmd eq "del" )
+    elsif ($cmd eq "del" )
     {
       $hash->{helper}{FrameHeight} = $DefaultFrameHeight;
     }
@@ -385,11 +385,11 @@ sub Map_Attr(@)
   # Attribute "frameShowDetailLinkInGroup"
   elsif (lc $attrName eq lc "frameShowDetailLinkInGroup" )
   {
-    if ( $cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{FrameShowDetailLinkInGroup} = "$attrVal";
     } 
-    elsif ( $cmd eq "del" )
+    elsif ($cmd eq "del" )
     {
       $hash->{helper}{FrameShowDetailLinkInGroup} = $DefaultFrameShowDetailLinkInGroup;
     }
@@ -401,11 +401,11 @@ sub Map_Attr(@)
   # Attribute "zoomStopped"
   elsif (lc $attrName eq lc "zoomStopped" )
   {
-    if ( $cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{ZoomLevelStopped} = "$attrVal";
     } 
-    elsif ( $cmd eq "del" )
+    elsif ($cmd eq "del" )
     {
       $hash->{helper}{ZoomLevelStopped} = $DefaultZoomLevelStopped;
     }
@@ -417,11 +417,11 @@ sub Map_Attr(@)
   # Attribute "zoomMoving"
   elsif (lc $attrName eq lc "zoomMoving" )
   {
-    if ( $cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{ZoomLevelMoving} = "$attrVal";
     } 
-    elsif ( $cmd eq "del" )
+    elsif ($cmd eq "del" )
     {
       $hash->{helper}{ZoomLevelMoving} = $DefaultZoomLevelMoving;
     }
@@ -433,11 +433,11 @@ sub Map_Attr(@)
   # Attribute "mapProvider"
   elsif (lc $attrName eq lc "mapProvider" )
   {
-    if ( $cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{MapProvider} = "$attrVal";
     } 
-    elsif ( $cmd eq "del" )
+    elsif ($cmd eq "del" )
     {
       $hash->{helper}{MapProvider} = $DefaultMapProvider;
     }
@@ -449,14 +449,14 @@ sub Map_Attr(@)
   # Attribute "refreshInterval"
   elsif (lc $attrName eq lc "refreshInterval" )
   {
-    if ( $cmd eq "set")
+    if ($cmd eq "set")
     {
       return "Interval must be greater than 0"
         unless($attrVal > 0);
 
       $hash->{helper}{RefreshInterval} = "$attrVal";
     } 
-    elsif ( $cmd eq "del" )
+    elsif ($cmd eq "del" )
     {
       $hash->{helper}{RefreshInterval} = $DefaultInterval_s;
     }
@@ -466,9 +466,9 @@ sub Map_Attr(@)
   }
   
   # Attribute "sourceDeviceName"
-  elsif(lc $attrName eq lc "sourceDeviceName")
+  elsif (lc $attrName eq lc "sourceDeviceName")
   {
-    if($cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{SourceDeviceName} = "$attrVal";
     } 
@@ -482,9 +482,9 @@ sub Map_Attr(@)
   }
 
   # Attribute "sourceReadingLatitudeName"
-  elsif(lc $attrName eq lc "sourceReadingLatitudeName")
+  elsif (lc $attrName eq lc "sourceReadingLatitudeName")
   {
-    if($cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{SourceReadingLatitudeName} = "$attrVal";
     } 
@@ -498,9 +498,9 @@ sub Map_Attr(@)
   }
 
   # Attribute "sourceReadingLongitudeName"
-  elsif(lc $attrName eq lc "sourceReadingLongitudeName")
+  elsif (lc $attrName eq lc "sourceReadingLongitudeName")
   {
-    if($cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{SourceReadingLongitudeName} = "$attrVal";
     } 
@@ -514,9 +514,9 @@ sub Map_Attr(@)
   }
 
   # Attribute "sourceReadingMovingName"
-  elsif(lc $attrName eq lc "sourceReadingMovingName")
+  elsif (lc $attrName eq lc "sourceReadingMovingName")
   {
-    if($cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{SourceReadingMovingName} = "$attrVal";
     } 
@@ -530,9 +530,9 @@ sub Map_Attr(@)
   }
 
   # Attribute "sourceReadingMovingCompareValue"
-  elsif(lc $attrName eq lc "sourceReadingMovingCompareValue")
+  elsif (lc $attrName eq lc "sourceReadingMovingCompareValue")
   {
-    if($cmd eq "set")
+    if ($cmd eq "set")
     {
       $hash->{helper}{SourceReadingMovingCompareValue} = "$attrVal";
     } 
@@ -617,31 +617,31 @@ sub Map_Set($@)
   Log3($name, 4, "Map_Set($name) - Set was called cmd: >>$cmd<<");
 
   ### Command "clearreadings"
-  if ( lc $cmd eq lc "clearreadings" )
+  if (lc $cmd eq lc "clearreadings" )
   {
     return "usage: $cmd <mask>"
-      if ( @args != 1 );
+      if (@args != 1 );
 
     my $mask = $args[0];
     fhem("deletereading $name $mask", 1);
     return;
   }
   ### Command "latitude"
-  elsif( lc $cmd eq lc "latitude" )
+  elsif (lc $cmd eq lc "latitude" )
   {
     $hash->{helper}{Latitude} = join( " ", @args );
     Map_UpdateLocation($hash);
     return;
   }
   ### Command "longitude"
-  elsif( lc $cmd eq lc "longitude" )
+  elsif (lc $cmd eq lc "longitude" )
   {
     $hash->{helper}{Longitude} = join( " ", @args );
     Map_UpdateLocation($hash);
     return;
   }
   ### Command "moving"
-  elsif( lc $cmd eq lc "moving" )
+  elsif (lc $cmd eq lc "moving" )
   {
     $hash->{helper}{Moving} = join( " ", @args );
     Map_UpdateLocation($hash);
@@ -657,7 +657,7 @@ sub Map_Set($@)
     $list .= "moving:0,1 ";
 
     $list .= "clearreadings:$DebugMarker.*,.* "
-      if($hash->{helper}{DEBUG} eq "1");
+      if ($hash->{helper}{DEBUG} eq "1");
 
     return "Unknown argument $cmd, choose one of $list";
   }
@@ -672,7 +672,7 @@ sub Map_UpdateInternals($)
 
   Log3($name, 4, "Map_UpdateInternals($name)");
   
-  if($hash->{helper}{DEBUG} eq "1")
+  if ($hash->{helper}{DEBUG} eq "1")
   {
     $hash->{$DebugMarker . "_IsDisabled"}                       = $hash->{helper}{IsDisabled};
 
@@ -741,15 +741,15 @@ sub Map_UpdateLocation($)
   my $savedMoving       = $moving;
   
   # mode is "source" 
-  if($hash->{helper}{Mode} eq $DefaultMode)
+  if ($hash->{helper}{Mode} eq $DefaultMode)
   {
     # get readings from sourcedevice
-    if(defined($defs{$sourceDeviceName}))
+    if (defined($defs{$sourceDeviceName}))
     {
       $longitude  = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingLongitudeName}, $longitude);
       $latitude   = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingLatitudeName}, $latitude);
       
-      if($hash->{helper}{SourceReadingMovingName} ne "")
+      if ($hash->{helper}{SourceReadingMovingName} ne "")
       {
         my $movingValue = ReadingsVal($sourceDeviceName, $hash->{helper}{SourceReadingMovingName}, "");
         $moving = $movingValue eq $hash->{helper}{SourceReadingMovingCompareValue} ? "1" : "0"; 
@@ -757,9 +757,9 @@ sub Map_UpdateLocation($)
     }
   }
   # if mode is simulation
-  elsif($hash->{helper}{Mode} eq "simulation")
+  elsif ($hash->{helper}{Mode} eq "simulation")
   {
-    if($moving ne "0")
+    if ($moving ne "0")
     {
       $longitude  += 0.001;
       $latitude   += 0.001;
@@ -771,7 +771,7 @@ sub Map_UpdateLocation($)
   }
 
   # Is location moving? Then ZoomIn:
-  if($moving ne "0")
+  if ($moving ne "0")
   {
     $zoomLevel += $zoomDirection;
   }
@@ -781,11 +781,11 @@ sub Map_UpdateLocation($)
   }
 
   # Ensure zoomlevel is in bounds
-  if($zoomLevel < $zoomMin)
+  if ($zoomLevel < $zoomMin)
   {
     $zoomLevel = $zoomMin; 
   }
-  elsif($zoomLevel > $zoomMax)
+  elsif ($zoomLevel > $zoomMax)
   {
     $zoomLevel = $zoomMax; 
   }
@@ -797,7 +797,7 @@ sub Map_UpdateLocation($)
   Map_UpdateInternals($hash);
 
   # position has changed?  
-  if($savedLatitude ne $latitude or
+  if ($savedLatitude ne $latitude or
     $savedLongitude ne $longitude)
   {
     Map_Store($hash, "Map_UpdateLocation", "Latitude", $hash->{helper}{Latitude});
@@ -828,7 +828,7 @@ sub Map_CreateURL($)
 
   my $url = ""; 
 
-  if($hash->{helper}{MapProvider} eq "googlemapsXXX")
+  if ($hash->{helper}{MapProvider} eq "googlemapsXXX")
   {
 #     $url = "https://maps.google.de/maps/search/?api=1" .
 #       "&query=$latitude,$longitude";
@@ -839,7 +839,7 @@ sub Map_CreateURL($)
 #       "&center=$latitude%2$longitude" .
 #       "";
   }
-  elsif($hash->{helper}{MapProvider} eq "openstreetmap")
+  elsif ($hash->{helper}{MapProvider} eq "openstreetmap")
   {
     my ($longitudeStart, $latitudeStart, $longitudeEnd, $latitudeEnd) = Map_LonLat_to_bbox($longitude, $latitude, $zoomLevel);
     #my $bbox = Map_LonLat_to_bbox($longitude, $latitude, $zoomLevel);
@@ -887,15 +887,15 @@ sub Map_FwFn($$$$)
   my $isFirst = (!$pageHash || !$pageHash->{mapLoaded});
 
   $isFirst = 0 
-    if($pageHash && 
+    if ($pageHash && 
       $pageHash->{mapIdx} && 
       $pageHash->{mapIdx} != 1);
 
   $pageHash->{mapLoaded} = 1
-    if($pageHash);
+    if ($pageHash);
 
   # navigation buttons
-  if($isFirst) 
+  if ($isFirst) 
   {
 #    $ret .= '<div class="SVGlabel" data-name="svgZoomControl">';
 #    $ret .= Map_zoomLink("zoom=-1", "Zoom-in", "zoom in");
@@ -904,7 +904,7 @@ sub Map_FwFn($$$$)
 #    $ret .= SVG_zoomLink("off=1",   "Next",    "next");
 #    $ret .= '</div>';
 #    $pageHash->{buttons} = 1 
-#      if($pageHash);
+#      if ($pageHash);
 
 #    $ret .= "<br>";
   }
@@ -976,7 +976,7 @@ sub Map_FwFn($$$$)
         "window.mapFrame_" . $id . ".width = window.framewidth_" . $id . "; " .
     
         # only set source if needed
-        "if(window.mapFrame_" . $id . ".src != window.url_" . $id . ")" .
+        "if (window.mapFrame_" . $id . ".src != window.url_" . $id . ")" .
         "{ " .
           "window.mapFrame_" . $id . ".src = window.url_" . $id . "; " .
         "} " .
@@ -989,21 +989,21 @@ sub Map_FwFn($$$$)
 
   $ret .= "</div>\n";
 
-  if(!$pageHash) 
+  if (!$pageHash) 
   {
 #      $ret .= SVG_PEdit($FW_wname,$d,$room,$pageHash) . "<br>";
       $ret .= "<br>";
   }
   else 
   {
-    if((!AttrVal($name, "group", "") && 
+    if ((!AttrVal($name, "group", "") && 
       !$FW_subdir) ||
       $hash->{helper}{FrameShowDetailLinkInGroup} eq "1") 
     {
       my $alias = AttrVal($name, "alias", $name);
       my $clAdd = "\" data-name=\"$name";
       $clAdd .= "\" style=\"display:none;"
-        if($FW_hiddenroom{detail});
+        if ($FW_hiddenroom{detail});
       $ret .= FW_pH("detail=$name", $alias, 0, "Maplabel Map_$name $clAdd", 1, 0);
       $ret .= "<br>";
     }
@@ -1064,7 +1064,7 @@ sub Map_Store($$$$)
   my $deviceKey = $type . "_" . $name . "_" . $key;
 
   my $setKeyError = setKeyValue($deviceKey, $value);
-  if(defined($setKeyError))
+  if (defined($setKeyError))
   {
     Log3($name, 3, "$sender($name) - setKeyValue $deviceKey error: $setKeyError");
   }
@@ -1086,10 +1086,10 @@ sub Map_Restore($$$$)
 
   my ($getKeyError, $value) = getKeyValue($deviceKey);
   $value = $defaultvalue
-    if(defined($getKeyError) or
+    if (defined($getKeyError) or
       not defined ($value));
 
-  if(defined($getKeyError))
+  if (defined($getKeyError))
   {
     Log3($name, 3, "$sender($name) - getKeyValue $deviceKey error: $getKeyError");
   }
@@ -1114,7 +1114,7 @@ sub Map_StoreRename($$$$)
 
   my ($getKeyError, $value) = getKeyValue($old_deviceKey);
 
-  if(defined($getKeyError))
+  if (defined($getKeyError))
   {
     Log3($new_name, 3, "$sender($new_name) - getKeyValue $old_deviceKey error: $getKeyError");
   }
@@ -1123,7 +1123,7 @@ sub Map_StoreRename($$$$)
     Log3($new_name, 5, "$sender($new_name) - getKeyValue: $old_deviceKey -> $value");
 
     my $setKeyError = setKeyValue($new_deviceKey, $value);
-    if(defined($setKeyError))
+    if (defined($setKeyError))
     {
       Log3($new_name, 3, "$sender($new_name) - setKeyValue $new_deviceKey error: $setKeyError");
     }
